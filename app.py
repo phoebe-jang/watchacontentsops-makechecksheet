@@ -37,6 +37,53 @@ from converter import (
 
 st.set_page_config(page_title="검수시트 자동 생성기", page_icon="🎬", layout="wide")
 
+
+def _password_gate() -> None:
+    """팀 공용 비밀번호 게이트. Streamlit Secrets의 'app_password' 값과 비교."""
+    if st.session_state.get("authed"):
+        return
+
+    try:
+        correct = st.secrets.get("app_password", "")
+    except Exception:
+        correct = ""
+    if not correct:
+        # 로컬에서 secrets가 없을 때 임시 fallback (배포 시엔 Streamlit Cloud secrets에 정확한 값 설정)
+        correct = "watchacontents"
+
+    st.markdown(
+        """
+        <style>
+        .gate-wrap { max-width: 420px; margin: 60px auto 16px auto; padding: 32px 28px;
+                     background: #ffffff; border: 1px solid #e2e8f0; border-radius: 14px;
+                     box-shadow: 0 6px 18px rgba(15,23,42,0.05); text-align: center; }
+        .gate-title { font-size: 18px; font-weight: 700; color: #0f172a; margin-bottom: 6px; }
+        .gate-sub { font-size: 13px; color: #64748b; margin-bottom: 18px; }
+        </style>
+        <div class="gate-wrap">
+            <div class="gate-title">🔒 검수시트 자동 생성기</div>
+            <div class="gate-sub">팀 비밀번호를 입력하세요</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    cc = st.columns([1, 2, 1])
+    with cc[1]:
+        with st.form("auth_form", clear_on_submit=False):
+            pwd = st.text_input("비밀번호", type="password", label_visibility="collapsed", placeholder="비밀번호")
+            submitted = st.form_submit_button("입장", type="primary", use_container_width=True)
+            if submitted:
+                if pwd and pwd == correct:
+                    st.session_state["authed"] = True
+                    st.rerun()
+                else:
+                    st.error("비밀번호가 일치하지 않습니다.")
+    st.stop()
+
+
+_password_gate()
+
 st.markdown(
     """
     <style>

@@ -13,6 +13,9 @@ venv/
 .vscode/
 .idea/
 
+# Streamlit secrets — 절대 커밋 금지 (비밀번호 등)
+.streamlit/secrets.toml
+
 # 회사 데이터 (편성표/검수시트 샘플) — 코드만 커밋
 편성표*.csv
 S_NewArrival_contents_master*
