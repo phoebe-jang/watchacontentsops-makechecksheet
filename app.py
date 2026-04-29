@@ -1,20 +1,36 @@
 """검수시트 자동 생성기 - Streamlit UI."""
 import html as _html
+import re
 from datetime import date
 
 import streamlit as st
 
+
+def _sanitize_filename(name: str) -> str:
+    """파일명 유효성 보정: 공백 트리밍 + 금지문자 제거 + 100자 제한."""
+    name = (name or "").strip()
+    if not name:
+        return ""
+    name = re.sub(r'[\\/:*?"<>|]', "", name)
+    if len(name) > 100:
+        name = name[:100]
+    return name
+
 from converter import (
     CHECKSHEET_HEADERS,
     DAYS,
+    WEEKDAYS,
     COL_A,
     COL_MAPPING_TYPE,
     COL_EPISODE_NUMBER,
     COL_FORMAL_NUMBER,
+    COL_NEW_SUMMARY,
     PREVIEW_COL_INDICES,
+    PREVIEW_COL_WIDTHS,
     parse_csv,
     build_for_day,
     build_xlsx,
+    build_ordered_entries,
     select_day_range,
     check_jongyeong_alerts,
 )
@@ -24,53 +40,118 @@ st.set_page_config(page_title="검수시트 자동 생성기", page_icon="🎬",
 st.markdown(
     """
     <style>
-    /* 다운로드 버튼: 단정한 다크 슬레이트 솔리드 */
+    /* 다운로드 카드 영역(SaaS 톤) — Streamlit container(border=True)로 감싼 후 내부 텍스트만 스타일 */
+    .dl-card-title {
+        font-size: 15.5px;
+        font-weight: 600;
+        color: #0f172a;
+        margin: 0 0 6px 0;
+        font-family: inherit;
+    }
+    .dl-card-sub {
+        font-size: 13.5px;
+        color: #475569;
+        line-height: 1.55;
+        margin: 0 0 10px 0;
+        font-family: inherit;
+    }
+    .dl-card-filename {
+        font-size: 13px;
+        color: #94a3b8;
+        margin: 0;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    /* 다운로드 버튼 — 작고 차분한 그린(emerald), 파일명 옆 인라인 */
     div[data-testid="stDownloadButton"] > button {
-        background: #111827 !important;
+        background: #059669 !important;
         color: #ffffff !important;
-        border: 1px solid #111827 !important;
-        padding: 12px 24px !important;
-        border-radius: 8px !important;
-        font-size: 14px !important;
+        border: 1px solid #059669 !important;
+        padding: 5px 12px !important;
+        border-radius: 7px !important;
+        font-size: 12.5px !important;
         font-weight: 500 !important;
         font-family: inherit !important;
         letter-spacing: 0 !important;
-        box-shadow: none !important;
-        transition: background 0.15s ease, border-color 0.15s ease;
+        box-shadow: 0 1px 2px rgba(5, 150, 105, 0.15) !important;
+        transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
         width: 100% !important;
+        height: 32px !important;
+        line-height: 1.2 !important;
     }
     div[data-testid="stDownloadButton"] > button:hover {
-        background: #000000 !important;
-        border-color: #000000 !important;
+        background: #047857 !important;
+        border-color: #047857 !important;
     }
     div[data-testid="stDownloadButton"] > button:active {
-        background: #1f2937 !important;
+        background: #065f46 !important;
     }
-    div[data-testid="stDownloadButton"] {
+    div[data-testid="stDownloadButton"] > button p {
+        margin: 0 !important;
+        font-size: 12.5px !important;
+        font-weight: 500 !important;
+    }
+    /* 시작 요일 셀렉트박스와 변환 미리보기 버튼 정렬용 */
+    .label-spacer {
+        height: 28px;
+    }
+    /* 셀렉트박스 줄 아래 hint 리스트 */
+    .hint-list {
         margin-top: 6px;
-    }
-    /* 콜아웃 카드 */
-    .download-card {
-        background: #f8fafc;
-        border: 1px solid #e2e8f0;
-        border-radius: 8px;
-        padding: 14px 18px;
-        margin-top: 14px;
-        margin-bottom: 8px;
-        font-family: inherit;
-    }
-    .download-card .download-title {
-        font-size: 14px;
-        font-weight: 600;
-        color: #0f172a;
-        margin-bottom: 4px;
-        font-family: inherit;
-    }
-    .download-card .download-sub {
         font-size: 12.5px;
+        color: #64748b;
+        line-height: 1.85;
+    }
+    .hint-list > div {
+        padding-left: 2px;
+    }
+    /* container(border=True) 박스 — 모던 SaaS 톤 */
+    [data-testid="stVerticalBlockBorderWrapper"] {
+        border: 1px solid #e2e8f0 !important;
+        border-radius: 14px !important;
+        box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 6px 18px rgba(15, 23, 42, 0.05);
+        background: #ffffff;
+    }
+    /* 다운로드 카드 강조용 그린 좌측 보더 (다운로드 액션 카드 전용 markdown 클래스로 적용) */
+    .dl-accent {
+        border-left: 3px solid #059669;
+        padding-left: 12px;
+        margin-left: -2px;
+        margin-bottom: 8px;
+    }
+    /* 파일명 인라인 편집 — Notion 스타일 호버/포커스 효과 */
+    [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stTextInput"] input {
+        background: transparent;
+        border: 1px dashed transparent;
         color: #475569;
-        line-height: 1.55;
-        font-family: inherit;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 13px;
+        padding: 4px 8px;
+        height: 32px;
+        transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+        cursor: text;
+    }
+    [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stTextInput"] input:hover {
+        background: #f1f5f9;
+        border-color: #cbd5e1;
+    }
+    [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stTextInput"] input:focus {
+        background: #ffffff;
+        border: 1px solid #6366f1;
+        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+        color: #0f172a;
+    }
+    [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stTextInput"] {
+        margin: 0 !important;
+    }
+    .fn-static-label, .fn-ext {
+        font-size: 13px;
+        color: #94a3b8;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        line-height: 32px;
+        white-space: nowrap;
+    }
+    .fn-ext {
+        color: #cbd5e1;
     }
     </style>
     """,
@@ -84,18 +165,26 @@ st.caption(
 
 with st.container(border=True):
     uploaded = st.file_uploader("편성표 CSV 업로드", type=["csv"])
-    cols = st.columns([2, 2, 2, 3])
+    cols = st.columns([2, 2, 2])
     with cols[0]:
-        start_day = st.selectbox("시작 요일", DAYS, index=0)
+        start_day = st.selectbox("시작 요일", WEEKDAYS, index=0)
     with cols[1]:
-        end_day = st.selectbox("끝 요일", DAYS, index=DAYS.index(start_day))
+        end_day = st.selectbox("끝 요일", WEEKDAYS, index=WEEKDAYS.index(start_day))
     with cols[2]:
+        # 셀렉트박스 라벨 자리만큼 여백을 줘서 버튼이 셀렉트박스 입력 영역과 같은 줄에 정렬되게
+        st.markdown('<div class="label-spacer"></div>', unsafe_allow_html=True)
         run = st.button("변환 미리보기", type="primary", use_container_width=True)
-    with cols[3]:
-        st.caption(
-            "월~일 순서 고정. 한 요일만 보고 싶으면 시작·끝을 같게 두세요. "
-            "범위 안에 금요일이 있으면 EBS 섹션도 자동 포함됩니다."
-        )
+    # 셀렉트박스 아래에 안내문 — 줄별로
+    st.markdown(
+        """
+        <div class="hint-list">
+            <div>· 월~금만 검수시트로 만듭니다. 토/일 편성은 자동으로 금요일에 합쳐져요.</div>
+            <div>· 한 요일만 보고 싶으면 시작·끝을 같게 두세요.</div>
+            <div>· EBS 섹션은 금요일에 자동 포함됩니다.</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 def _esc(v) -> str:
@@ -114,35 +203,36 @@ def _column_letter(idx: int) -> str:
 
 
 def _row_bg(category: str, no_fill: bool = False, over_final: bool = False) -> str:
+    """검수시트 템플릿(Arial 10pt) 색 톤에 맞춘 미리보기 행 배경."""
     if over_final:
-        return "#bfdbfe"  # 종영 의심 — 행 전체 옅은 파랑 (다른 음영 모두 덮음)
+        return "#cfe2f3"  # 종영 의심 — 옅은 파랑 (템플릿 동일)
     if no_fill:
         return "#ffffff"
     if category == "header":
-        return "#dcdcdc"
+        return "#d9d9d9"  # 요일 헤더 회색
     if category == "header_holiday":
-        return "#a8f2a8"  # 형광 초록 (휴일 요일 헤더)
+        return "#00ff00"  # 휴일 형광 초록 (템플릿)
     if category == "reserved":
-        return "#ffd6e5"
+        return "#fecbdf"  # 예약작 핑크 (템플릿)
     if category == "cancelled":
-        return "#ffd0d0"
+        return "#ead1dc"  # 결방/홀드백 옅은 보라핑크 (템플릿)
     if category == "ebs":
-        return "#ececec"
+        return "#ffffff"  # EBS 콘텐츠 행은 음영 없음
     if category == "holiday_header":
-        return "#dcdcdc"  # 그룹 헤더 (요일 헤더와 같은 회색)
+        return "#d9d9d9"  # 연휴지연 그룹 헤더 (요일과 같은 회색)
     if category == "holiday_body":
-        return "#9c9c9c"  # 콘텐츠 (더 진한 회색)
+        return "#cccccc"  # 연휴지연 콘텐츠 (더 진한 회색)
     if category == "prev_day":
-        return "#fff4e0"  # 전날 셋팅 (옅은 살구색 — 일반과 결방 사이 구분용)
+        return "#fecbdf"  # 전날 셋팅 = 예약작과 동일 핑크
     return "#ffffff"
 
 
 def _cell_html(val: str, col_idx: int, category: str) -> str:
     if col_idx == COL_A:
         if val == "종영":
-            return f"<span style='color:#222;font-weight:600;background:#fff3a3;padding:1px 4px;border-radius:3px'>{_esc(val)}</span>"
-        if category == "header":
-            return f"<span style='font-weight:600'>{_esc(val)}</span>"
+            return f"<span style='color:#222;font-weight:700;background:#fff292;padding:1px 4px;border-radius:3px'>{_esc(val)}</span>"
+        if category in ("header", "header_holiday", "holiday_header"):
+            return f"<span style='font-weight:700'>{_esc(val)}</span>"
         return _esc(val)
     if col_idx == COL_MAPPING_TYPE and val:
         badge_color = "#1976d2" if val == "basic" else "#9c27b0"
@@ -154,17 +244,34 @@ def _cell_html(val: str, col_idx: int, category: str) -> str:
 
 
 def _render_preview(headers, results_by_day: list[tuple[str, dict]]) -> str:
-    """여러 요일 결과를 한 표에 이어붙여 미리보기 (매핑된 컬럼만 표시)."""
+    """여러 요일 결과를 한 표에 이어붙여 미리보기 (매핑된 컬럼만 표시).
+    table-layout: fixed + <colgroup>으로 컬럼 폭을 고정하고, 신규 요약처럼 긴 헤더 셀은
+    colspan으로 옆 셀들 위에 시각적으로 흘러나오게 처리(구글 스프레드시트 셀 오버플로우와 동일).
+    """
     indices = PREVIEW_COL_INDICES
+    new_summary_pos = indices.index(COL_NEW_SUMMARY)  # colspan 시작 위치
+    table_width = sum(PREVIEW_COL_WIDTHS.get(i, 100) for i in indices)
+    cell_base = "border:1px solid #ddd;padding:4px 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
+
     parts = ["<div style='overflow-x:auto;border:1px solid #ccc'>"]
+    # 검수시트 템플릿 통일: Arial 10pt
     parts.append(
-        "<table style='border-collapse:collapse;font-size:12px;"
-        "font-family:-apple-system,BlinkMacSystemFont,sans-serif;white-space:nowrap'>"
+        f"<table style='border-collapse:collapse;font-size:13px;"
+        f"font-family:Arial,Helvetica,sans-serif;"
+        f"table-layout:fixed;width:{table_width}px'>"
     )
+    # 컬럼 폭 고정
+    parts.append("<colgroup>")
+    for i in indices:
+        w = PREVIEW_COL_WIDTHS.get(i, 100)
+        parts.append(f"<col style='width:{w}px'>")
+    parts.append("</colgroup>")
+    # 헤더1: 알파벳
     parts.append("<thead><tr style='background:#bdbdbd'>")
     for i in indices:
         parts.append(
-            "<th style='border:1px solid #777;padding:2px 6px;font-size:10px;color:#222'>"
+            "<th style='border:1px solid #777;padding:2px 6px;font-size:10px;color:#222;"
+            "overflow:hidden;text-overflow:ellipsis;white-space:nowrap'>"
             + _esc(_column_letter(i))
             + "</th>"
         )
@@ -173,7 +280,9 @@ def _render_preview(headers, results_by_day: list[tuple[str, dict]]) -> str:
         h = headers[i] if headers[i] else "(구분)"
         parts.append(
             "<th style='border:1px solid #999;padding:4px 8px;font-size:11px;"
-            "font-weight:600;text-align:left'>" + _esc(h) + "</th>"
+            "font-weight:600;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap'>"
+            + _esc(h)
+            + "</th>"
         )
     parts.append("</tr></thead><tbody>")
 
@@ -183,10 +292,39 @@ def _render_preview(headers, results_by_day: list[tuple[str, dict]]) -> str:
         is_over = bool(entry.get("over_final"))
         bg = _row_bg(cat, no_fill, is_over)
         parts.append(f"<tr style='background:{bg}'>")
-        for i in indices:
-            v = entry["values"][i]
-            cell = _cell_html(v, i, cat)
-            parts.append(f"<td style='border:1px solid #ddd;padding:4px 8px'>{cell}</td>")
+
+        # 요일 헤더 행에서 C열(원본검수 = COL_NEW_SUMMARY)의 신규 요약은 길어서
+        # 옆 빈 셀들 위로 흘러나오게 colspan 처리 (구글 시트 셀 오버플로우 흉내)
+        is_overflow_header = (
+            cat in ("header", "header_holiday")
+            and bool(entry["values"][COL_NEW_SUMMARY])
+        )
+
+        # A열은 ellipsis 없이 전체 텍스트 표시 (휴일 라벨, 연휴지연에피 비고 텍스트가 길어도 잘리지 않음)
+        a_cell_style = "border:1px solid #ddd;padding:4px 8px;white-space:nowrap;overflow:visible;"
+
+        if is_overflow_header:
+            for n, i in enumerate(indices):
+                v = entry["values"][i]
+                cell = _cell_html(v, i, cat)
+                if n < new_summary_pos:
+                    style = a_cell_style if i == COL_A else cell_base
+                    parts.append(f"<td style='{style}'>{cell}</td>")
+                elif n == new_summary_pos:
+                    remaining = len(indices) - n
+                    parts.append(
+                        f"<td colspan='{remaining}' "
+                        f"style='border:1px solid #ddd;padding:4px 8px;"
+                        f"white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>"
+                        f"{cell}</td>"
+                    )
+                    break
+        else:
+            for i in indices:
+                v = entry["values"][i]
+                cell = _cell_html(v, i, cat)
+                style = a_cell_style if i == COL_A else cell_base
+                parts.append(f"<td style='{style}'>{cell}</td>")
         parts.append("</tr>")
 
     for d, result in results_by_day:
@@ -198,11 +336,11 @@ def _render_preview(headers, results_by_day: list[tuple[str, dict]]) -> str:
         for r in result.get("holiday_block", []):
             emit_row(r)
         if d == "금" and result["ebs_section"]:
-            parts.append("<tr style='background:#bdbdbd'>")
+            parts.append("<tr style='background:#d9d9d9'>")
             for k, _i in enumerate(indices):
-                label = "📺 EBS" if k == 0 else ""
+                label = "EBS" if k == 0 else ""
                 parts.append(
-                    f"<td style='border:1px solid #999;padding:3px 8px;font-size:11px;font-weight:600'>{_esc(label)}</td>"
+                    f"<td style='{cell_base}font-weight:700'>{_esc(label)}</td>"
                 )
             parts.append("</tr>")
             for r in result["ebs_section"]:
@@ -212,20 +350,31 @@ def _render_preview(headers, results_by_day: list[tuple[str, dict]]) -> str:
     return "".join(parts)
 
 
+# 변환 미리보기 버튼이 눌리면 결과를 session_state에 캐시 — 다운로드 버튼 클릭으로
+# Streamlit이 rerun을 트리거해도 미리보기가 그대로 유지되도록.
 if run:
     if uploaded is None:
         st.error("먼저 편성표 CSV 파일을 업로드해주세요.")
+        st.session_state.pop("preview_active", None)
     else:
         try:
-            df = parse_csv(uploaded)
+            df_now = parse_csv(uploaded)
         except Exception as e:
             st.error(f"CSV 파싱 실패: {e}")
             st.stop()
-
-        days = select_day_range(start_day, end_day)
-        if not days:
+        days_now = select_day_range(start_day, end_day)
+        if not days_now:
             st.error("요일 선택이 잘못되었습니다.")
             st.stop()
+        st.session_state["cached_df"] = df_now
+        st.session_state["cached_days"] = days_now
+        st.session_state["preview_active"] = True
+
+# preview_active가 True이면 캐시된 df/days로 미리보기·다운로드 렌더링
+if st.session_state.get("preview_active") and st.session_state.get("cached_df") is not None:
+    df = st.session_state["cached_df"]
+    days = st.session_state["cached_days"]
+    if True:  # 들여쓰기 유지를 위한 래퍼
 
         with st.expander(f"📥 업로드된 편성표 (전체 {len(df)}행) — 클릭해서 펼치기"):
             st.dataframe(df, use_container_width=True)
@@ -252,14 +401,14 @@ if run:
                     margin:14px 0;
                     box-shadow:0 4px 14px rgba(211,47,47,0.10);
                 '>
-                    <div style='font-size:15px;font-weight:800;color:#b71c1c;margin-bottom:6px;'>
+                    <div style='font-size:16.5px;font-weight:800;color:#b71c1c;margin-bottom:8px;'>
                         종영 의심 항목
                     </div>
-                    <div style='font-size:12px;color:#555;margin-bottom:10px;line-height:1.6;'>
+                    <div style='font-size:13.5px;color:#555;margin-bottom:12px;line-height:1.6;'>
                         편성표의 <em>최종회차</em>보다 이번주 회차가 더 큽니다. 미리보기와 엑셀 시트 맨 위에 동일하게 표시되며,
                         해당 회차 셀은 <span style='color:#1565c0;font-weight:700'>파란색</span>으로 강조됩니다.
                     </div>
-                    <ul style='margin:0;padding-left:22px;line-height:1.8;font-size:13.5px;color:#222;'>
+                    <ul style='margin:0;padding-left:22px;line-height:1.85;font-size:14.5px;color:#222;'>
                         {items_html}
                     </ul>
                 </div>
@@ -295,31 +444,55 @@ if run:
             unsafe_allow_html=True,
         )
 
-        st.info("💡 행 단위 복사·붙여넣기는 아래 다운로드한 엑셀 파일에서 진행하세요. 미리보기는 데이터 검토용입니다.")
-
         try:
             xlsx_bytes = build_xlsx(df, days)
             today = date.today().isoformat()
             filename = f"검수시트_{today}_{range_label}.xlsx"
-            st.markdown(
-                """
-                <div class="download-card">
-                    <div class="download-title">검수시트 엑셀 준비 완료</div>
-                    <div class="download-sub">
-                        선택한 요일 범위가 한 시트에 이어 출력됩니다(요일 헤더 + 예약작 + 연휴지연편성 + 일반 + 전날 셋팅 + 결방, 금요일 포함 시 EBS 섹션). 행 단위로 그대로 복사해 검수시트에 붙여넣으면 돼요.
+            default_base = f"검수시트_{today}_{range_label}"
+            # 요일 범위가 바뀌면 파일명 base를 새 default로 리셋
+            if st.session_state.get("filename_range_label") != range_label:
+                st.session_state["filename_base"] = default_base
+                st.session_state["filename_range_label"] = range_label
+
+            # 미리보기 표와 다운로드 카드 사이 여백
+            st.markdown('<div style="height:32px"></div>', unsafe_allow_html=True)
+
+            with st.container(border=True):
+                st.markdown(
+                    """
+                    <div class="dl-accent">
+                        <div class="dl-card-title">검수시트 엑셀 준비 완료</div>
+                        <div class="dl-card-sub">선택한 요일 범위가 한 시트에 이어 출력돼요. 행 단위로 그대로 복사해 검수시트에 붙여넣으면 됩니다.</div>
                     </div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-            dl_cols = st.columns([1, 2, 1])
-            with dl_cols[1]:
-                st.download_button(
-                    label=f"{filename}  다운로드",
-                    data=xlsx_bytes,
-                    file_name=filename,
-                    mime="application/vnd.openxlsxformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True,
+                    """,
+                    unsafe_allow_html=True,
                 )
+
+                # 파일명 인라인 편집 + 다운로드 버튼 — 한 줄에 인라인 배치
+                fn_cols = st.columns([0.9, 4, 0.7, 1.6])
+                with fn_cols[0]:
+                    st.markdown('<div class="fn-static-label">파일명:</div>', unsafe_allow_html=True)
+                with fn_cols[1]:
+                    st.text_input(
+                        "파일명",
+                        key="filename_base",
+                        label_visibility="collapsed",
+                        help="클릭해서 파일명을 수정할 수 있어요. Enter 또는 입력 영역 바깥 클릭으로 저장됩니다.",
+                    )
+                with fn_cols[2]:
+                    st.markdown('<div class="fn-ext">.xlsx</div>', unsafe_allow_html=True)
+
+                edited_base = _sanitize_filename(st.session_state.get("filename_base", "")) or default_base
+                filename = f"{edited_base}.xlsx"
+
+                with fn_cols[3]:
+                    st.download_button(
+                        label="⬇ 엑셀 다운로드",
+                        data=xlsx_bytes,
+                        file_name=filename,
+                        mime="application/vnd.openxlsxformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True,
+                    )
+
         except Exception as e:
             st.error(f"엑셀 생성 실패: {e}")

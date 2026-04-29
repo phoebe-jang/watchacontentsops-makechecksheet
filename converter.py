@@ -10,8 +10,26 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 
 DAYS = ["월", "화", "수", "목", "금", "토", "일"]
+WEEKDAYS = ["월", "화", "수", "목", "금"]  # 검수시트가 만들어지는 요일 (토/일은 금요일에 합침)
 DAY_LABEL = {d: d + "요일" for d in DAYS}
 DAY_PREV = {"월": "일", "화": "월", "수": "화", "목": "수", "금": "목", "토": "금", "일": "토"}
+
+# 2026년 한국 공휴일 (M/D). 휴일 자동 판정용 — 편성표 비고에 "(기존 X에피)"가 있더라도
+# X 요일의 실제 날짜가 이 목록에 있을 때만 휴일로 인식한다.
+KR_HOLIDAYS_2026 = {
+    "1/1",       # 신정
+    "2/16", "2/17", "2/18",  # 설날 연휴
+    "3/1", "3/2",            # 삼일절(일) + 대체공휴일
+    "5/1",       # 근로자의 날
+    "5/5",       # 어린이날
+    "5/24", "5/25",  # 부처님오신날(일) + 대체
+    "6/6",       # 현충일
+    "8/15", "8/17",  # 광복절(토) + 대체
+    "9/24", "9/25", "9/26", "9/28",  # 추석 연휴 + 대체
+    "10/3", "10/5",  # 개천절(토) + 대체
+    "10/9",      # 한글날
+    "12/25",     # 성탄절
+}
 
 # 검수시트 엑셀의 컬럼 헤더 (검수시트 예시 - 시트1.csv 1행 기준).
 # 첫 컬럼은 빈 헤더(요일 라벨/종영 표시 들어가는 자리). 동일 이름 컬럼("담당자")이 중복 등장하지만
@@ -117,6 +135,21 @@ PREVIEW_COL_INDICES = [
     COL_FILE_PATH,
 ]
 
+# 미리보기 그리드 고정용 컬럼 폭 (px).
+PREVIEW_COL_WIDTHS = {
+    COL_A: 96,  # 구분 — 짧게. 긴 텍스트(요일 헤더/연휴지연 헤더)는 옆 빈 셀 위로 흘러나옴
+    COL_TIER: 56,
+    COL_NEW_SUMMARY: 200,
+    COL_SEASON_ID: 100,
+    COL_SEASON_CODE: 110,
+    COL_SEASON_TITLE: 240,
+    COL_MAPPING_TYPE: 96,
+    COL_EPISODE_NUMBER: 90,
+    COL_FORMAL_NUMBER: 90,
+    COL_CP: 140,
+    COL_FILE_PATH: 320,
+}
+
 
 def _empty_row() -> list[str]:
     return [""] * len(CHECKSHEET_HEADERS)
@@ -153,7 +186,8 @@ def _classify(row: pd.Series) -> str:
     bigo_a = str(row.get("비고", "") or "")
     e_n = str(row.get("이번주 e/n", "") or "").strip()
     sigan = str(row.get("시간", "") or "").strip()
-    if any(k in bigo for k in ["결방", "홀드백"]) or e_n in {"결방", "홀드백"}:
+    # 결방/홀드백: `이번주 e/n` 컬럼 값이 정확히 그 텍스트일 때만 (편성비고 부분 매칭 제거 — 다음 행 오인식 방지)
+    if e_n in {"결방", "홀드백"}:
         return "cancelled"
     if "신규" in bigo:
         return "new"
@@ -175,35 +209,49 @@ def _display_day(row: pd.Series, prev_normal_day: str | None = None) -> str:
     bigo = str(row.get("비고", "") or "").strip()
     # 연휴지연편성: 편성표 csv 위치상 직전의 일반 요일에 따라가도록
     if "연휴지연" in bigo:
-        return prev_normal_day or yoil
+        result = prev_normal_day or yoil
     # 전날 셋팅: 강제로 전날
-    if "전날 셋팅" in bigo or "전날셋팅" in bigo:
-        return DAY_PREV.get(yoil, yoil)
-    # 예약작 시간 < 12 → 전날
-    cat = _classify(row)
-    if cat == "reserved":
-        h = _parse_hour(sigan)
-        if 0 <= h < 12:
-            return DAY_PREV.get(yoil, yoil)
-    return yoil
+    elif "전날 셋팅" in bigo or "전날셋팅" in bigo:
+        result = DAY_PREV.get(yoil, yoil)
+    else:
+        # 예약작 시간 < 12 → 전날
+        cat = _classify(row)
+        if cat == "reserved":
+            h = _parse_hour(sigan)
+            if 0 <= h < 12:
+                result = DAY_PREV.get(yoil, yoil)
+            else:
+                result = yoil
+        else:
+            result = yoil
+    # 토/일은 검수시트 없음 → 금요일로 합산 (사용자 룰)
+    if result in ("토", "일"):
+        result = "금"
+    return result
 
 
 def _compute_holiday_info(df: pd.DataFrame) -> tuple[set[str], dict[str, str]]:
-    """편성표 비고에 '(기존 X에피)' 표기로 X 요일을 휴일로 식별.
+    """편성표 비고에 '(기존 X에피)' 표기로 휴일 후보 추출 → 그 X 요일의 실제 날짜가
+    `KR_HOLIDAYS_2026`에 있을 때만 휴일로 인정.
     Returns (휴일 요일 set, 요일 → 'M/D' 매핑)."""
     holiday_days: set[str] = set()
+    day_to_date: dict[str, str] = {}
     pat = re.compile(r"\(\s*기존\s*([월화수목금토일])\s*에피\s*\)")
+
+    candidate_days: set[str] = set()
     for _, row in df.iterrows():
         bigo = str(row.get("비고", "") or "")
         if "연휴지연" not in bigo:
             continue
         m = pat.search(bigo)
         if m:
-            holiday_days.add(m.group(1))
+            candidate_days.add(m.group(1))
 
-    day_to_date: dict[str, str] = {}
+    if not candidate_days:
+        return holiday_days, day_to_date
+
     if "요일" in df.columns and "오픈일" in df.columns:
-        for d in holiday_days:
+        for d in candidate_days:
             rows = df[df["요일"].astype(str).str.strip() == d]
             for _, row in rows.iterrows():
                 opendate = str(row.get("오픈일", "") or "").strip()
@@ -211,11 +259,23 @@ def _compute_holiday_info(df: pd.DataFrame) -> tuple[set[str], dict[str, str]]:
                     continue
                 nums = re.findall(r"\d+", opendate)
                 if len(nums) >= 3:
-                    day_to_date[d] = f"{int(nums[1])}/{int(nums[2])}"
+                    md = f"{int(nums[1])}/{int(nums[2])}"
                 elif len(nums) == 2:
-                    day_to_date[d] = f"{int(nums[0])}/{int(nums[1])}"
-                if d in day_to_date:
-                    break
+                    md = f"{int(nums[0])}/{int(nums[1])}"
+                else:
+                    continue
+                # 실제 한국 공휴일일 때만 휴일로 인정
+                if md in KR_HOLIDAYS_2026:
+                    holiday_days.add(d)
+                    day_to_date[d] = md
+                    print(
+                        f"[휴일 판정] {d}요일 ({md}) → 공휴일 인정"
+                    )
+                else:
+                    print(
+                        f"[휴일 판정] {d}요일 ({md}) → 공휴일 아님, 일반 헤더 처리"
+                    )
+                break
     return holiday_days, day_to_date
 
 
@@ -269,19 +329,27 @@ def check_jongyeong_alerts(df: pd.DataFrame) -> list[dict]:
     return alerts
 
 
+_CP_SUFFIX_RE = re.compile(r"-[A-Z0-9]+$")  # 권리사 꼬리 코드 (예: -RS50, -RS65, -FLAT)
+
+
+def _strip_cp_suffix(cp: str) -> str:
+    """`CP bill`의 꼬리 코드 제거: 'WAG-RS50' → 'WAG', 'BELLMEDIA-FLAT' → 'BELLMEDIA'."""
+    return _CP_SUFFIX_RE.sub("", str(cp or "").strip()).strip()
+
+
 def _format_new_summary(new_items: list[dict]) -> str:
-    """`신규: 타이틀 e/n화 (CP bill) / 타이틀 e/n화 (CP bill) / ...` 형식 문자열."""
+    """`신규: 타이틀 e/n화 (권리사) / ...` 형식. 권리사는 -RS 코드 제거된 형태."""
     if not new_items:
         return ""
     parts = []
     for r in new_items:
         title = r["Title"]
         e_n = str(r.get("이번주 e/n", "") or "").strip()
-        cp = str(r.get("CP bill", "") or "").strip()
+        cp_clean = _strip_cp_suffix(r.get("CP bill", ""))
         ep = f"{e_n}화" if e_n else ""
         item = " ".join(s for s in [title, ep] if s)
-        if cp:
-            item = f"{item} ({cp})"
+        if cp_clean:
+            item = f"{item} ({cp_clean})"
         parts.append(item)
     return "신규: " + " / ".join(parts)
 
@@ -360,11 +428,11 @@ def build_for_day(df: pd.DataFrame, target_day: str) -> dict:
     is_target_holiday = target_day in holiday_days
 
     new_items: list[dict] = []
-    reserved_rows: list[dict] = []
+    # 편성표 csv 순서 그대로 보존 (예약작 정렬 X — 사용자 룰)
+    mixed_rows: list[dict] = []  # reserved + normal을 csv 순서대로
     # 연휴지연편성: 비고 텍스트별로 그룹화 → 출력 시 한 헤더 + 그 아래 콘텐츠
     holiday_groups: dict[str, list[dict]] = {}
     holiday_group_order: list[str] = []
-    normal_rows: list[dict] = []
     prev_day_rows: list[dict] = []  # 비고 '전날 셋팅' 행 — 전날 맨 아래(결방 위)
     cancelled: list[dict] = []
 
@@ -375,6 +443,12 @@ def build_for_day(df: pd.DataFrame, target_day: str) -> dict:
         is_holiday = "연휴지연" in bigo
         prev = prev_normal_days[idx] if idx < len(prev_normal_days) else None
         display_d = _display_day(row, prev_normal_day=prev)
+
+        # 월요일 행 + 비고 "전날 셋팅" → 전주 금요일에 이미 포함된 것이므로 이번 주 검수시트에서 제외
+        if cat == "prev_day":
+            yoil_orig = str(row.get("요일", "") or "").strip()
+            if yoil_orig == "월":
+                continue
 
         if cat == "new":
             if display_d != target_day:
@@ -427,6 +501,11 @@ def build_for_day(df: pd.DataFrame, target_day: str) -> dict:
         for i, (e_val, f_val) in enumerate(pairs):
             jongyeong_here = is_jongyeong and i == len(pairs) - 1
             vals = _row_values_for(row, e_val, f_val, jongyeong_here)
+            # 전날 셋팅 행: A열에 원래 요일 표기 (예: "화 에피") — 예약작과 같은 핑크 음영
+            if cat == "prev_day":
+                yoil_orig = str(row.get("요일", "") or "").strip()
+                if yoil_orig:
+                    vals[COL_A] = f"{yoil_orig} 에피"
             entry = {
                 "values": vals,
                 "category": cat,
@@ -439,18 +518,15 @@ def build_for_day(df: pd.DataFrame, target_day: str) -> dict:
             }
             if cat == "cancelled":
                 cancelled.append(entry)
-            elif cat == "reserved":
-                reserved_rows.append(entry)
             elif cat == "prev_day":
                 prev_day_rows.append(entry)
             else:
-                normal_rows.append(entry)
+                # reserved / normal 모두 편성표 csv 순서 그대로
+                mixed_rows.append(entry)
 
-    reserved_rows.sort(key=lambda r: _parse_hour(r["time"]))
-
-    # 출력 순서: 예약작 → 일반 → 전날 셋팅(결방 위)
+    # 출력 순서: 편성표 csv 순서(예약·일반 섞임) → 전날 셋팅(결방 위)
     # (결방 → 연휴지연 그룹은 build_xlsx / 미리보기에서 cancelled 뒤에 별도로 이어 붙임)
-    body: list[dict] = reserved_rows + normal_rows + prev_day_rows
+    body: list[dict] = mixed_rows + prev_day_rows
 
     # 연휴지연 그룹 — 비고 텍스트별로 (헤더 1행 + 콘텐츠들)
     holiday_block: list[dict] = []
@@ -468,9 +544,24 @@ def build_for_day(df: pd.DataFrame, target_day: str) -> dict:
         )
         holiday_block.extend(holiday_groups[bigo_text])
 
-    # 휴일 요일이면 그 요일 콘텐츠는 음영 X (요일 헤더 행만 형광 초록)
+    # 디버깅 로그 (Streamlit 터미널에 출력)
+    if holiday_block:
+        print(
+            f"[연휴지연 그룹 진입] target_day={target_day} "
+            f"is_target_holiday={is_target_holiday} "
+            f"groups={list(holiday_group_order)} "
+            f"holiday_block_size={len(holiday_block)}"
+        )
+        for h in holiday_block[:5]:
+            print(
+                f"  - cat={h['category']} A={h['values'][COL_A]!r} "
+                f"title={h['values'][COL_SEASON_TITLE]!r}"
+            )
+
+    # 휴일 요일이면 그 요일의 일반 콘텐츠/결방은 음영 X (요일 헤더 행만 형광 초록).
+    # 단, 연휴지연 그룹(holiday_block)은 자체 음영(회색 두 톤)을 그대로 유지.
     if is_target_holiday:
-        for entry in body + cancelled + holiday_block:
+        for entry in body + cancelled:
             entry["no_fill"] = True
 
     # 요일 헤더 행
@@ -521,18 +612,56 @@ def build_for_day(df: pd.DataFrame, target_day: str) -> dict:
 # ── XLSX 출력 ────────────────────────────────────────────────────────────
 
 # 행 카테고리별 음영 (구글 시트 검수시트와 자연스럽게 어울리는 톤)
-_FILL_HEADER_DAY = PatternFill(start_color="FFD9D9D9", end_color="FFD9D9D9", fill_type="solid")  # 회색
-_FILL_RESERVED = PatternFill(start_color="FFFFD6E5", end_color="FFFFD6E5", fill_type="solid")    # 핑크
-_FILL_CANCELLED = PatternFill(start_color="FFFFD0D0", end_color="FFFFD0D0", fill_type="solid")   # 빨강
-_FILL_EBS = PatternFill(start_color="FFECECEC", end_color="FFECECEC", fill_type="solid")
-_FILL_EBS_BANNER = PatternFill(start_color="FFBDBDBD", end_color="FFBDBDBD", fill_type="solid")
-_FILL_JONGYEONG = PatternFill(start_color="FFFFF3A3", end_color="FFFFF3A3", fill_type="solid")   # 노랑
-_FILL_HOLIDAY_HEADER = PatternFill(start_color="FFD9D9D9", end_color="FFD9D9D9", fill_type="solid")  # 연휴지연 그룹 헤더 (요일 헤더와 같은 회색)
-_FILL_HOLIDAY_BODY = PatternFill(start_color="FF9C9C9C", end_color="FF9C9C9C", fill_type="solid")    # 연휴지연 콘텐츠 (더 진한 회색)
-_FILL_HEADER_HOLIDAY = PatternFill(start_color="FFA8F2A8", end_color="FFA8F2A8", fill_type="solid")  # 형광 초록 (휴일 요일 헤더)
-_FILL_PREV_DAY = PatternFill(start_color="FFFFF4E0", end_color="FFFFF4E0", fill_type="solid")        # 전날 셋팅(옅은 살구)
-_FILL_OVER_FINAL = PatternFill(start_color="FFBFDBFE", end_color="FFBFDBFE", fill_type="solid")      # 종영 의심 (행 전체 옅은 파랑)
-_FILL_ALERT = PatternFill(start_color="FFFFE082", end_color="FFFFE082", fill_type="solid")           # 알림(노란-주황)
+# 검수시트 템플릿 색 톤에 맞춘 fill (검수시트 예시 템플릿.xlsx 분석 결과)
+_FILL_HEADER_DAY = PatternFill(start_color="FFD9D9D9", end_color="FFD9D9D9", fill_type="solid")      # 요일 헤더 회색
+_FILL_RESERVED = PatternFill(start_color="FFEAD1DC", end_color="FFEAD1DC", fill_type="solid")        # 예약작 핑크 (시트2 가이드)
+_FILL_CANCELLED = PatternFill(start_color="FFE6B8AF", end_color="FFE6B8AF", fill_type="solid")       # 결방/홀드백 빨간색 (시트2 가이드)
+_FILL_EBS_BANNER = PatternFill(start_color="FFD9D9D9", end_color="FFD9D9D9", fill_type="solid")      # EBS 시작행 = 요일 헤더와 같은 회색
+# (EBS 콘텐츠 행은 음영 X — _fill_for에서 None 반환)
+_FILL_JONGYEONG = PatternFill(start_color="FFFFF292", end_color="FFFFF292", fill_type="solid")       # 종영 셀 노랑
+_FILL_HOLIDAY_HEADER = PatternFill(start_color="FFD9D9D9", end_color="FFD9D9D9", fill_type="solid")  # 연휴지연 그룹 헤더 (요일과 같은 회색)
+_FILL_HOLIDAY_BODY = PatternFill(start_color="FFB7B7B7", end_color="FFB7B7B7", fill_type="solid")    # 연휴지연 콘텐츠 (시트2 가이드 진한 회색)
+_FILL_HEADER_HOLIDAY = PatternFill(start_color="FF00FF00", end_color="FF00FF00", fill_type="solid")  # 휴일 요일 헤더 (형광 초록)
+_FILL_PREV_DAY = PatternFill(start_color="FFEAD1DC", end_color="FFEAD1DC", fill_type="solid")        # 전날 셋팅 = 예약작과 동일 핑크 (시트2 가이드)
+_FILL_OVER_FINAL = PatternFill(start_color="FFCFE2F3", end_color="FFCFE2F3", fill_type="solid")      # 종영 의심 (옅은 파랑)
+_FILL_ALERT = PatternFill(start_color="FFFFF2CC", end_color="FFFFF2CC", fill_type="solid")           # 알림(옅은 노랑)
+
+# 폰트 — 템플릿: Arial 10pt
+_FONT_BASE = Font(name="Arial", size=10)
+_FONT_BOLD = Font(name="Arial", size=10, bold=True)
+
+# === 구글 시트 호환 모드 색상 (사용자 매핑) ===
+# 예약작=연한자홍색3 / 결방=연한붉은딸기색3 / 요일&EBS=연한회색1 / 연휴지연 헤더=회색 /
+# 연휴지연 콘텐츠=진한회색1 / 휴일=녹색
+_GS_FILL_HEADER_DAY = PatternFill(start_color="FFD9D9D9", end_color="FFD9D9D9", fill_type="solid")
+_GS_FILL_HEADER_HOLIDAY = PatternFill(start_color="FF00FF00", end_color="FF00FF00", fill_type="solid")
+_GS_FILL_RESERVED = PatternFill(start_color="FFEAD1DC", end_color="FFEAD1DC", fill_type="solid")
+_GS_FILL_CANCELLED = PatternFill(start_color="FFE6B8AF", end_color="FFE6B8AF", fill_type="solid")
+_GS_FILL_PREV_DAY = PatternFill(start_color="FFEAD1DC", end_color="FFEAD1DC", fill_type="solid")
+_GS_FILL_HOLIDAY_HEADER = PatternFill(start_color="FFB7B7B7", end_color="FFB7B7B7", fill_type="solid")
+_GS_FILL_HOLIDAY_BODY = PatternFill(start_color="FF999999", end_color="FF999999", fill_type="solid")
+_GS_FILL_EBS_BANNER = PatternFill(start_color="FFD9D9D9", end_color="FFD9D9D9", fill_type="solid")
+_GS_FILL_OVER_FINAL = PatternFill(start_color="FFCFE2F3", end_color="FFCFE2F3", fill_type="solid")
+
+
+def _gs_fill_for(category: str):
+    if category == "header":
+        return _GS_FILL_HEADER_DAY
+    if category == "header_holiday":
+        return _GS_FILL_HEADER_HOLIDAY
+    if category == "reserved":
+        return _GS_FILL_RESERVED
+    if category == "cancelled":
+        return _GS_FILL_CANCELLED
+    if category == "ebs":
+        return None
+    if category == "holiday_header":
+        return _GS_FILL_HOLIDAY_HEADER
+    if category == "holiday_body":
+        return _GS_FILL_HOLIDAY_BODY
+    if category == "prev_day":
+        return _GS_FILL_PREV_DAY
+    return None
 
 
 def _fill_for(category: str) -> PatternFill | None:
@@ -543,7 +672,7 @@ def _fill_for(category: str) -> PatternFill | None:
     if category == "cancelled":
         return _FILL_CANCELLED
     if category == "ebs":
-        return _FILL_EBS
+        return None  # EBS 콘텐츠 행은 음영 없음 (배너만 회색)
     if category == "holiday_header":
         return _FILL_HOLIDAY_HEADER
     if category == "holiday_body":
@@ -555,7 +684,56 @@ def _fill_for(category: str) -> PatternFill | None:
     return None
 
 
-def build_xlsx(df: pd.DataFrame, days: list[str] | str) -> bytes:
+def build_ordered_entries(df: pd.DataFrame, days: list[str] | str) -> list[dict]:
+    """미리보기/xlsx에 출력될 순서대로 평탄화된 엔트리 리스트.
+    각 항목: {idx, kind, day, label, entry|None}.
+    kind ∈ {header, body, cancelled, holiday, ebs_banner, ebs}.
+    행 제외 기능을 위해 idx 부여.
+    """
+    if isinstance(days, str):
+        days = [days]
+    out: list[dict] = []
+    idx = 0
+    for d in days:
+        result = build_for_day(df, d)
+        out.append(
+            {"idx": idx, "kind": "header", "day": d, "entry": result["header_row"],
+             "label": f"[{d}요일 헤더] {result['header_row']['values'][COL_A]}"}
+        )
+        idx += 1
+        for entry in result["body"]:
+            title = entry["values"][COL_SEASON_TITLE] or ""
+            ep = entry["values"][COL_EPISODE_NUMBER] or ""
+            out.append({"idx": idx, "kind": "body", "day": d, "entry": entry,
+                        "label": f"[{d}] {title} {ep}".strip()})
+            idx += 1
+        for entry in result["cancelled"]:
+            title = entry["values"][COL_SEASON_TITLE] or ""
+            out.append({"idx": idx, "kind": "cancelled", "day": d, "entry": entry,
+                        "label": f"[{d} 결방] {title}"})
+            idx += 1
+        for entry in result["holiday_block"]:
+            if entry["category"] == "holiday_header":
+                out.append({"idx": idx, "kind": "holiday", "day": d, "entry": entry,
+                            "label": f"[{d} 연휴지연 헤더] {entry['values'][COL_A]}"})
+            else:
+                title = entry["values"][COL_SEASON_TITLE] or ""
+                out.append({"idx": idx, "kind": "holiday", "day": d, "entry": entry,
+                            "label": f"[{d} 연휴지연] {title}"})
+            idx += 1
+        if d == "금" and result["ebs_section"]:
+            out.append({"idx": idx, "kind": "ebs_banner", "day": d, "entry": None,
+                        "label": "[EBS 섹션 헤더]"})
+            idx += 1
+            for entry in result["ebs_section"]:
+                title = entry["values"][COL_SEASON_TITLE] or ""
+                out.append({"idx": idx, "kind": "ebs", "day": d, "entry": entry,
+                            "label": f"[EBS] {title}"})
+                idx += 1
+    return out
+
+
+def build_xlsx(df: pd.DataFrame, days: list[str] | str, excluded_indices: set[int] | None = None, gsheet_mode: bool = False) -> bytes:
     """선택한 요일(여러 개 가능)의 검수시트를 한 시트에 이어쓴 .xlsx 바이트.
 
     - days가 단일 요일 문자열이면 그 요일만, 리스트면 리스트 순서대로 이어 출력.
@@ -570,6 +748,11 @@ def build_xlsx(df: pd.DataFrame, days: list[str] | str) -> bytes:
     ws = wb.active
     ws.title = f"{days[0]}~{days[-1]}요일" if len(days) > 1 else f"{days[0]}요일"
 
+    # 색상 매핑 선택: 구글시트 호환 모드 vs 기본 (검수시트 템플릿)
+    fill_for = _gs_fill_for if gsheet_mode else _fill_for
+    over_fill = _GS_FILL_OVER_FINAL if gsheet_mode else _FILL_OVER_FINAL
+    banner_fill = _GS_FILL_EBS_BANNER if gsheet_mode else _FILL_EBS_BANNER
+
     # 시트 상단에 종영 의심 알림 (있으면)
     alerts = check_jongyeong_alerts(df)
     for alert in alerts:
@@ -580,7 +763,8 @@ def build_xlsx(df: pd.DataFrame, days: list[str] | str) -> bytes:
         row_idx = ws.max_row
         for col_idx in range(1, len(CHECKSHEET_HEADERS) + 1):
             ws.cell(row=row_idx, column=col_idx).fill = _FILL_ALERT
-        ws.cell(row=row_idx, column=1).font = Font(bold=True, color="FFC62828")
+            ws.cell(row=row_idx, column=col_idx).font = _FONT_BASE
+        ws.cell(row=row_idx, column=1).font = Font(name="Arial", size=10, bold=True, color="FFC62828")
         ws.cell(row=row_idx, column=COL_NEW_SUMMARY + 1).alignment = Alignment(
             wrap_text=True, vertical="center"
         )
@@ -588,40 +772,40 @@ def build_xlsx(df: pd.DataFrame, days: list[str] | str) -> bytes:
     def write_entry(entry: dict) -> None:
         ws.append(entry["values"])
         row_idx = ws.max_row
+        # 모든 셀에 Arial 10pt 강제 적용 (검수시트 템플릿 통일)
+        for col_idx in range(1, len(entry["values"]) + 1):
+            ws.cell(row=row_idx, column=col_idx).font = _FONT_BASE
         if not entry.get("no_fill"):
             # over_final이면 카테고리 음영을 덮고 행 전체를 옅은 파랑으로
-            fill = _FILL_OVER_FINAL if entry.get("over_final") else _fill_for(entry["category"])
+            fill = over_fill if entry.get("over_final") else fill_for(entry["category"])
             if fill is not None:
                 for col_idx in range(1, len(entry["values"]) + 1):
                     ws.cell(row=row_idx, column=col_idx).fill = fill
-        if entry.get("jongyeong") and entry["category"] != "holiday":
-            ws.cell(row=row_idx, column=1).fill = _FILL_JONGYEONG
-            ws.cell(row=row_idx, column=1).font = Font(bold=True)
-        if entry["category"] in ("header", "header_holiday"):
-            ws.cell(row=row_idx, column=1).font = Font(bold=True)
+        # xlsx에서는 종영 셀에 노란 음영을 입히지 않음 (사용자 룰: 미리보기에만 음영, 다운로드 X)
+        if entry.get("jongyeong") and entry["category"] not in ("holiday_header", "holiday_body"):
+            ws.cell(row=row_idx, column=1).font = _FONT_BOLD
+        if entry["category"] in ("header", "header_holiday", "holiday_header"):
+            ws.cell(row=row_idx, column=1).font = _FONT_BOLD
             ws.cell(row=row_idx, column=COL_NEW_SUMMARY + 1).alignment = Alignment(
                 wrap_text=True, vertical="center"
             )
 
-    for d in days:
-        result = build_for_day(df, d)
-        write_entry(result["header_row"])
-        for r in result["body"]:
-            write_entry(r)
-        for r in result["cancelled"]:
-            write_entry(r)
-        for r in result["holiday_block"]:
-            write_entry(r)
-        if d == "금" and result["ebs_section"]:
+    excluded = set(excluded_indices or [])
+    ordered = build_ordered_entries(df, days)
+    for item in ordered:
+        if item["idx"] in excluded:
+            continue
+        if item["kind"] == "ebs_banner":
             banner_vals = [""] * len(CHECKSHEET_HEADERS)
-            banner_vals[0] = "📺 EBS"
+            banner_vals[0] = "EBS"
             ws.append(banner_vals)
             banner_row = ws.max_row
             for col_idx in range(1, len(CHECKSHEET_HEADERS) + 1):
-                ws.cell(row=banner_row, column=col_idx).fill = _FILL_EBS_BANNER
-            ws.cell(row=banner_row, column=1).font = Font(bold=True)
-            for r in result["ebs_section"]:
-                write_entry(r)
+                ws.cell(row=banner_row, column=col_idx).fill = banner_fill
+                ws.cell(row=banner_row, column=col_idx).font = _FONT_BASE
+            ws.cell(row=banner_row, column=1).font = _FONT_BOLD
+        elif item["entry"] is not None:
+            write_entry(item["entry"])
 
     width_map = {
         COL_A + 1: 10,
@@ -645,10 +829,12 @@ def build_xlsx(df: pd.DataFrame, days: list[str] | str) -> bytes:
 
 
 def select_day_range(start: str, end: str) -> list[str]:
-    """월~일 고정 순서 안에서 start~end 구간을 추출. start가 end보다 뒤면 swap."""
-    if start not in DAYS or end not in DAYS:
+    """월~금 고정 순서 안에서 start~end 구간을 추출. start가 end보다 뒤면 swap.
+    토/일은 검수시트 대상에서 제외된다 (금요일에 합쳐짐).
+    """
+    if start not in WEEKDAYS or end not in WEEKDAYS:
         return []
-    si, ei = DAYS.index(start), DAYS.index(end)
+    si, ei = WEEKDAYS.index(start), WEEKDAYS.index(end)
     if si > ei:
         si, ei = ei, si
-    return DAYS[si : ei + 1]
+    return WEEKDAYS[si : ei + 1]
