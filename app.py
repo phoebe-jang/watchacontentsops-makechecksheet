@@ -48,8 +48,12 @@ def _password_gate() -> None:
     except Exception:
         correct = ""
     if not correct:
-        # 로컬에서 secrets가 없을 때 임시 fallback (배포 시엔 Streamlit Cloud secrets에 정확한 값 설정)
-        correct = "watchacontents"
+        # secrets에 비밀번호가 설정되지 않은 경우 — 코드에 fallback 두지 않음(보안)
+        st.error(
+            "비밀번호가 설정되어 있지 않습니다. 관리자가 Streamlit Cloud Settings → Secrets에서 "
+            "`app_password` 값을 입력하거나, 로컬 실행 시 `.streamlit/secrets.toml`에 추가해주세요."
+        )
+        st.stop()
 
     st.markdown(
         """

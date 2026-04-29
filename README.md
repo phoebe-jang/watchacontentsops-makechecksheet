@@ -24,7 +24,7 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-비밀번호는 `.streamlit/secrets.toml`의 `app_password` 값(로컬 fallback: `watchacontents`).
+비밀번호는 `.streamlit/secrets.toml`에 `app_password = "..."` 형식으로 설정해야 합니다(파일 자체는 `.gitignore`로 절대 커밋되지 않음).
 
 ## Streamlit Cloud 배포
 
