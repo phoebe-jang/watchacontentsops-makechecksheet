@@ -78,7 +78,8 @@ def _password_gate() -> None:
             pwd = st.text_input("비밀번호", type="password", label_visibility="collapsed", placeholder="비밀번호")
             submitted = st.form_submit_button("입장", type="primary", use_container_width=True)
             if submitted:
-                if pwd and pwd == correct:
+                # secrets가 숫자로 파싱돼도 (따옴표 없이) 비교가 되도록 양쪽을 문자열로 정규화
+                if pwd and pwd.strip() == str(correct).strip():
                     st.session_state["authed"] = True
                     st.rerun()
                 else:
