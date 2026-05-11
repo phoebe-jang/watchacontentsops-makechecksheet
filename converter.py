@@ -338,19 +338,26 @@ def _strip_cp_suffix(cp: str) -> str:
 
 
 def _format_new_summary(new_items: list[dict]) -> str:
-    """`신규: 타이틀 e/n화 (권리사) / ...` 형식. 권리사는 -RS 코드 제거된 형태."""
+    """`신규: 타이틀 e/n화 [(f/n N)] (권리사) / ...` 형식.
+    f/n은 e/n과 다를 때만 `(f/n N)`으로 추가. 권리사는 -RS 코드 제거된 형태."""
     if not new_items:
         return ""
     parts = []
     for r in new_items:
         title = r["Title"]
         e_n = str(r.get("이번주 e/n", "") or "").strip()
+        f_n = str(r.get("이번주 f/n", "") or "").strip()
         cp_clean = _strip_cp_suffix(r.get("CP bill", ""))
         ep = f"{e_n}화" if e_n else ""
         item = " ".join(s for s in [title, ep] if s)
+        # f/n 조건: e/n과 f/n 둘 다 있고 번호가 다를 때만 표시
+        show_fn = bool(e_n) and bool(f_n) and e_n != f_n
+        if show_fn:
+            item = f"{item} (f/n {f_n})"
         if cp_clean:
             item = f"{item} ({cp_clean})"
         parts.append(item)
+        print(f"[신규 f/n] {title}: en={e_n!r} fn={f_n!r} show_fn={show_fn}")
     return "신규: " + " / ".join(parts)
 
 
@@ -459,6 +466,7 @@ def build_for_day(df: pd.DataFrame, target_day: str) -> dict:
                 {
                     "Title": title_clean,
                     "이번주 e/n": str(row.get("이번주 e/n", "") or ""),
+                    "이번주 f/n": str(row.get("이번주 f/n", "") or ""),
                     "CP bill": str(row.get("CP bill", "") or ""),
                 }
             )
