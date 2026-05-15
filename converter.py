@@ -161,12 +161,18 @@ def parse_csv(file: Any) -> pd.DataFrame:
     return df
 
 
+_SUB_SUFFIX_RE = re.compile(r"\s*-\s*자막\s*$")
+_DUB_SUFFIX_RE = re.compile(r"\s*-\s*더빙\s*$")
+
+
 def _strip_mapping_suffix(title: str) -> tuple[str, str]:
-    if title.endswith(" - 자막"):
-        return title[: -len(" - 자막")], "basic"
-    if title.endswith(" - 더빙"):
-        return title[: -len(" - 더빙")], "dubbing"
-    return title, ""
+    """타이틀 끝의 ` - 자막`/` - 더빙` 꼬리를 제거하고 mapping_type 반환.
+    공백 변형(`-더빙`, `- 더빙`, ` -더빙` 등) 모두 흡수."""
+    if _DUB_SUFFIX_RE.search(title):
+        return _DUB_SUFFIX_RE.sub("", title).strip(), "dubbing"
+    if _SUB_SUFFIX_RE.search(title):
+        return _SUB_SUFFIX_RE.sub("", title).strip(), "basic"
+    return title.strip(), ""
 
 
 def _is_irregular(row: pd.Series) -> bool:
@@ -338,26 +344,37 @@ def _strip_cp_suffix(cp: str) -> str:
 
 
 def _format_new_summary(new_items: list[dict]) -> str:
-    """`신규: 타이틀 e/n화 [(f/n N)] (권리사) / ...` 형식.
-    f/n은 e/n과 다를 때만 `(f/n N)`으로 추가. 권리사는 -RS 코드 제거된 형태."""
+    """`신규: 타이틀[(자막/더빙)] e/n화 [(f/n N)] (권리사) / ...` 형식.
+    - mapping_type이 basic이면 "(자막)", dubbing이면 "(더빙)"을 타이틀 바로 뒤(공백 없이)에 붙임.
+    - f/n은 e/n과 다를 때만 `(f/n N)`으로 추가.
+    - 권리사는 -RS 코드 제거된 형태."""
     if not new_items:
         return ""
     parts = []
     for r in new_items:
-        title = r["Title"]
+        title = r["Title"].strip()
+        mt = r.get("mapping_type", "")
+        type_label = "(더빙)" if mt == "dubbing" else "(자막)" if mt == "basic" else ""
         e_n = str(r.get("이번주 e/n", "") or "").strip()
         f_n = str(r.get("이번주 f/n", "") or "").strip()
         cp_clean = _strip_cp_suffix(r.get("CP bill", ""))
-        ep = f"{e_n}화" if e_n else ""
-        item = " ".join(s for s in [title, ep] if s)
-        # f/n 조건: e/n과 f/n 둘 다 있고 번호가 다를 때만 표시
+
+        # 타이틀 + (자막/더빙) — 공백 없음
+        item = f"{title}{type_label}"
+        # + 회차 — 공백 있음
+        if e_n:
+            item = f"{item} {e_n}화"
+        # f/n 조건: 둘 다 있고 다를 때만
         show_fn = bool(e_n) and bool(f_n) and e_n != f_n
         if show_fn:
             item = f"{item} (f/n {f_n})"
         if cp_clean:
             item = f"{item} ({cp_clean})"
         parts.append(item)
-        print(f"[신규 f/n] {title}: en={e_n!r} fn={f_n!r} show_fn={show_fn}")
+        print(
+            f"[신규 처리] raw={r['Title']!r} mt={mt!r} type_label={type_label!r} "
+            f"en={e_n!r} fn={f_n!r} show_fn={show_fn} final={item!r}"
+        )
     return "신규: " + " / ".join(parts)
 
 
@@ -461,13 +478,14 @@ def build_for_day(df: pd.DataFrame, target_day: str) -> dict:
             if display_d != target_day:
                 continue
             title_raw = str(row.get("Title", "") or "")
-            title_clean, _mt = _strip_mapping_suffix(title_raw)
+            title_clean, mt = _strip_mapping_suffix(title_raw)
             new_items.append(
                 {
                     "Title": title_clean,
                     "이번주 e/n": str(row.get("이번주 e/n", "") or ""),
                     "이번주 f/n": str(row.get("이번주 f/n", "") or ""),
                     "CP bill": str(row.get("CP bill", "") or ""),
+                    "mapping_type": mt,  # basic=자막 / dubbing=더빙 / ""=일반
                 }
             )
             continue
