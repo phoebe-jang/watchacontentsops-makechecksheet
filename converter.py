@@ -161,13 +161,14 @@ def parse_csv(file: Any) -> pd.DataFrame:
     return df
 
 
-_SUB_SUFFIX_RE = re.compile(r"\s*-\s*자막\s*$")
-_DUB_SUFFIX_RE = re.compile(r"\s*-\s*더빙\s*$")
+# 자막/더빙 꼬리 패턴: 하이픈/괄호/대괄호 + 공백 변형 모두 흡수
+_SUB_SUFFIX_RE = re.compile(r"(?:\s*-\s*자막\s*|\s*\(\s*자막\s*\)\s*|\s*\[\s*자막\s*\]\s*)$")
+_DUB_SUFFIX_RE = re.compile(r"(?:\s*-\s*더빙\s*|\s*\(\s*더빙\s*\)\s*|\s*\[\s*더빙\s*\]\s*)$")
 
 
 def _strip_mapping_suffix(title: str) -> tuple[str, str]:
-    """타이틀 끝의 ` - 자막`/` - 더빙` 꼬리를 제거하고 mapping_type 반환.
-    공백 변형(`-더빙`, `- 더빙`, ` -더빙` 등) 모두 흡수."""
+    """타이틀 끝의 자막/더빙 꼬리를 제거하고 mapping_type 반환.
+    지원 패턴: ` - 더빙`, `-더빙`, ` (더빙)`, `[더빙]` 및 공백 변형 (자막도 동일)."""
     if _DUB_SUFFIX_RE.search(title):
         return _DUB_SUFFIX_RE.sub("", title).strip(), "dubbing"
     if _SUB_SUFFIX_RE.search(title):
