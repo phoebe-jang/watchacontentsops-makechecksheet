@@ -585,20 +585,27 @@ def build_for_day(df: pd.DataFrame, target_day: str) -> dict:
                 f"title={h['values'][COL_SEASON_TITLE]!r}"
             )
 
-    # 휴일 요일이면 그 요일의 일반 콘텐츠/결방은 음영 X (요일 헤더 행만 형광 초록).
-    # 단, 연휴지연 그룹(holiday_block)은 자체 음영(회색 두 톤)을 그대로 유지.
+    # 휴일 요일이면 일반 콘텐츠만 음영 X (요일 헤더만 형광 초록).
+    # 단, 결방(cancelled)은 어느 요일이든 빨간 음영 유지, 연휴지연(holiday_block)도 자체 회색 유지.
     if is_target_holiday:
-        for entry in body + cancelled:
+        for entry in body:
             entry["no_fill"] = True
+    # 결방 행 음영 적용 검증용 디버그 로그
+    for entry in cancelled:
+        title_d = entry["values"][COL_SEASON_TITLE]
+        print(
+            f"[결방 음영] target_day={target_day} category={entry['category']!r} "
+            f"no_fill={entry.get('no_fill', False)} title={title_d!r}"
+        )
 
     # 요일 헤더 행
     header_vals = _empty_row()
     if is_target_holiday:
         date_str = day_to_date.get(target_day, "")
         if date_str:
-            header_vals[COL_A] = f"({DAY_LABEL[target_day]} {date_str} 휴일)"
+            header_vals[COL_A] = f"{DAY_LABEL[target_day]} ({date_str} 휴일)"
         else:
-            header_vals[COL_A] = f"({DAY_LABEL[target_day]} 휴일)"
+            header_vals[COL_A] = f"{DAY_LABEL[target_day]} (휴일)"
     else:
         header_vals[COL_A] = DAY_LABEL.get(target_day, target_day)
     header_vals[COL_NEW_SUMMARY] = _format_new_summary(new_items)
