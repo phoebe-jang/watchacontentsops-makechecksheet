@@ -820,11 +820,11 @@ def build_xlsx(df: pd.DataFrame, days: list[str] | str, excluded_indices: set[in
         if entry.get("jongyeong") and entry["category"] not in ("holiday_header", "holiday_body"):
             ws.cell(row=row_idx, column=1).font = _FONT_BOLD
         if entry["category"] in ("header", "header_holiday", "holiday_header"):
-            # 연휴지연 그룹 헤더 텍스트는 빨간 굵게로 강조 (xlsx)
+            # holiday_header(연휴지연)만 빨간 굵게로 강조. 요일 헤더(header, header_holiday)는 일반 굵기.
             if entry["category"] == "holiday_header":
                 ws.cell(row=row_idx, column=1).font = _FONT_BOLD_RED
             else:
-                ws.cell(row=row_idx, column=1).font = _FONT_BOLD
+                ws.cell(row=row_idx, column=1).font = _FONT_BASE
             ws.cell(row=row_idx, column=COL_NEW_SUMMARY + 1).alignment = Alignment(
                 wrap_text=True, vertical="center"
             )

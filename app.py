@@ -284,10 +284,9 @@ def _cell_html(val: str, col_idx: int, category: str) -> str:
         if val == "종영":
             return f"<span style='color:#222;font-weight:700;background:#fff292;padding:1px 4px;border-radius:3px'>{_esc(val)}</span>"
         if category == "holiday_header":
-            # 연휴지연 그룹 헤더 — 빨간 굵게로 강조
+            # 연휴지연 그룹 헤더 — 빨간 굵게로 강조 (유지)
             return f"<span style='font-weight:700;color:#ff0000'>{_esc(val)}</span>"
-        if category in ("header", "header_holiday"):
-            return f"<span style='font-weight:700'>{_esc(val)}</span>"
+        # 요일 헤더(header, header_holiday)는 일반 굵기 — 음영(녹색/회색)으로 충분히 구분됨
         return _esc(val)
     if col_idx == COL_MAPPING_TYPE and val:
         badge_color = "#1976d2" if val == "basic" else "#9c27b0"
