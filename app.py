@@ -283,7 +283,10 @@ def _cell_html(val: str, col_idx: int, category: str) -> str:
     if col_idx == COL_A:
         if val == "종영":
             return f"<span style='color:#222;font-weight:700;background:#fff292;padding:1px 4px;border-radius:3px'>{_esc(val)}</span>"
-        if category in ("header", "header_holiday", "holiday_header"):
+        if category == "holiday_header":
+            # 연휴지연 그룹 헤더 — 빨간 굵게로 강조
+            return f"<span style='font-weight:700;color:#ff0000'>{_esc(val)}</span>"
+        if category in ("header", "header_holiday"):
             return f"<span style='font-weight:700'>{_esc(val)}</span>"
         return _esc(val)
     if col_idx == COL_MAPPING_TYPE and val:

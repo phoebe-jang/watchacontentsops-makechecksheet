@@ -663,6 +663,7 @@ _FILL_ALERT = PatternFill(start_color="FFFFF2CC", end_color="FFFFF2CC", fill_typ
 # 폰트 — 템플릿: Arial 10pt
 _FONT_BASE = Font(name="Arial", size=10)
 _FONT_BOLD = Font(name="Arial", size=10, bold=True)
+_FONT_BOLD_RED = Font(name="Arial", size=10, bold=True, color="FFFF0000")  # 연휴지연 헤더 강조용
 
 # === 구글 시트 호환 모드 색상 (사용자 매핑) ===
 # 예약작=연한자홍색3 / 결방=연한붉은딸기색3 / 요일&EBS=연한회색1 / 연휴지연 헤더=회색 /
@@ -819,7 +820,11 @@ def build_xlsx(df: pd.DataFrame, days: list[str] | str, excluded_indices: set[in
         if entry.get("jongyeong") and entry["category"] not in ("holiday_header", "holiday_body"):
             ws.cell(row=row_idx, column=1).font = _FONT_BOLD
         if entry["category"] in ("header", "header_holiday", "holiday_header"):
-            ws.cell(row=row_idx, column=1).font = _FONT_BOLD
+            # 연휴지연 그룹 헤더 텍스트는 빨간 굵게로 강조 (xlsx)
+            if entry["category"] == "holiday_header":
+                ws.cell(row=row_idx, column=1).font = _FONT_BOLD_RED
+            else:
+                ws.cell(row=row_idx, column=1).font = _FONT_BOLD
             ws.cell(row=row_idx, column=COL_NEW_SUMMARY + 1).alignment = Alignment(
                 wrap_text=True, vertical="center"
             )
