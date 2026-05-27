@@ -119,12 +119,12 @@ st.markdown(
         margin: 0;
         font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     }
-    /* 다운로드 버튼 — 모던하게 폴리시드된 emerald (subtle inset highlight + 더 부드러운 그림자) */
+    /* 다운로드 버튼 — 모던 emerald, 콘텐츠 너비 콤팩트(width:auto) */
     div[data-testid="stDownloadButton"] > button {
         background: #10b981 !important;
         color: #ffffff !important;
         border: 1px solid #10b981 !important;
-        padding: 6px 14px !important;
+        padding: 6px 18px !important;
         border-radius: 8px !important;
         font-size: 13px !important;
         font-weight: 600 !important;
@@ -134,9 +134,11 @@ st.markdown(
                     inset 0 1px 0 rgba(255, 255, 255, 0.14) !important;
         transition: background 0.15s ease, border-color 0.15s ease,
                     box-shadow 0.15s ease, transform 0.05s ease;
-        width: 100% !important;
+        width: auto !important;
+        min-width: 0 !important;
         height: 32px !important;
         line-height: 1.2 !important;
+        white-space: nowrap !important;
     }
     div[data-testid="stDownloadButton"] > button:hover {
         background: #059669 !important;
@@ -214,8 +216,13 @@ st.markdown(
         font-size: 13px !important;
         padding: 4px 56px 4px 12px !important;
         height: 32px !important;
+        max-width: 360px !important;
         transition: border-color 0.15s ease, box-shadow 0.15s ease;
         cursor: text;
+    }
+    /* 카드 안의 가로 행 컬럼 사이 간격 좁히기 (Streamlit 기본 1rem → 0.5rem) */
+    [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .dl-accent) [data-testid="stHorizontalBlock"] {
+        gap: 0.5rem !important;
     }
     [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .dl-accent) [data-testid="stTextInput"] input:hover {
         border-color: #cbd5e1 !important;
@@ -590,6 +597,7 @@ def _clipboard_button(
         cursor: pointer;
         padding: 6px 0;
         user-select: none;
+        white-space: nowrap;
         transition: color 0.15s ease;
       }}
       .clip-link-{safe_key}:hover {{
@@ -799,8 +807,8 @@ if st.session_state.get("preview_active") and st.session_state.get("cached_df") 
                     unsafe_allow_html=True,
                 )
 
-                # 파일명 행 — 라벨 / [input + .xlsx(::after로 내부 통합)] / 다운로드 버튼
-                fn_cols = st.columns([0.6, 5.0, 1.6])
+                # 파일명 행 — 라벨 / [input + .xlsx(::after로 내부 통합)] / 콤팩트 다운로드 버튼 / 버퍼
+                fn_cols = st.columns([0.5, 3.2, 1.3, 2.2])
                 with fn_cols[0]:
                     st.markdown('<div class="fn-static-label">파일명</div>', unsafe_allow_html=True)
                 with fn_cols[1]:
@@ -815,25 +823,26 @@ if st.session_state.get("preview_active") and st.session_state.get("cached_df") 
                 filename = f"{edited_base}.xlsx"
 
                 with fn_cols[2]:
+                    # use_container_width 제거 — CSS의 width:auto와 합쳐져 콘텐츠 너비로 콤팩트
                     st.download_button(
-                        label="⬇ 엑셀 다운로드",
+                        label="엑셀 다운로드",
                         data=xlsx_bytes,
                         file_name=filename,
                         mime="application/vnd.openxlsxformats-officedocument.spreadsheetml.sheet",
-                        use_container_width=True,
                     )
 
                 # 행간 여백
                 st.markdown('<div class="card-row-gap"></div>', unsafe_allow_html=True)
 
-                # 클립보드 복사 행 — 라벨 / 텍스트 링크 / 헤더 포함 체크박스 (서로 바로 옆에 붙도록)
+                # 클립보드 복사 행 — 라벨 / 텍스트 링크 / 헤더 포함 체크박스 (정말 바로 옆에 붙도록)
                 # include_header는 체크박스가 뒤에 렌더되므로 session_state에서 먼저 읽어 링크 HTML에 반영
                 include_header = bool(st.session_state.get("clip_include_header", False))
                 clip_html = _render_clipboard_html(
                     CHECKSHEET_HEADERS, results_by_day, include_header=include_header
                 )
 
-                clip_cols = st.columns([0.6, 1.9, 4.7])
+                # 카드 안 가로 행 gap을 8px로 줄였으므로 컬럼 비율도 타이트하게
+                clip_cols = st.columns([0.5, 1.7, 1.3, 3.7])
                 with clip_cols[0]:
                     st.markdown('<div class="fn-static-label">복사</div>', unsafe_allow_html=True)
                 with clip_cols[1]:
