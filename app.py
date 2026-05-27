@@ -199,15 +199,28 @@ st.markdown(
     [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stTextInput"] {
         margin: 0 !important;
     }
-    .fn-static-label, .fn-ext {
-        font-size: 13px;
+    /* 카드 행 미니 라벨 — '파일명' / '복사' 등. 모던 미니멀(소문자 sans-serif, 약한 회색). */
+    .fn-static-label {
+        font-size: 12px;
         color: #94a3b8;
+        font-weight: 500;
+        letter-spacing: 0.01em;
+        line-height: 32px;
+        white-space: nowrap;
+        font-family: inherit;
+    }
+    /* 파일 확장자 표기 — 더 약하게, 입력 필드에 자연스럽게 붙어보이도록 */
+    .fn-ext {
+        font-size: 12px;
+        color: #cbd5e1;
         font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
         line-height: 32px;
         white-space: nowrap;
+        padding-left: 2px;
     }
-    .fn-ext {
-        color: #cbd5e1;
+    /* 카드 내 행간 여백 */
+    .card-row-gap {
+        height: 6px;
     }
     </style>
     """,
@@ -527,45 +540,57 @@ def _render_clipboard_html(headers, results_by_day, include_header: bool = False
 def _clipboard_button(
     html_content: str,
     *,
-    button_label: str = "📋 구글시트로 복사",
+    button_label: str = "📋 클립보드에 복사",
     key: str = "clip",
-    height: int = 48,
+    height: int = 60,
 ) -> None:
-    """클립보드 복사 버튼 (Streamlit components iframe).
+    """클립보드 복사 — 텍스트 링크 스타일 + 클릭 시 아래에 '✅ 복사됨!' 페이드 피드백.
 
     구현 메모: navigator.clipboard.write()는 iframe sandbox에서 권한 문제로
     조용히 실패하는 경우가 있어, 호환성이 가장 좋은 execCommand('copy') +
     contentEditable div + copy 이벤트(text/html + text/plain) 방식을 사용한다.
     """
-    html_js = json.dumps(html_content)  # JS 문자열로 안전하게 임베드
-    label_js = json.dumps(button_label)
+    html_js = json.dumps(html_content)
     safe_key = re.sub(r"[^A-Za-z0-9_]", "_", key)
     component_html = f"""
     <style>
-      .clip-btn-{safe_key} {{
-        background: #6366f1;
-        color: #ffffff;
-        border: 1px solid #6366f1;
-        padding: 6px 14px;
-        border-radius: 7px;
-        font-size: 12.5px;
+      html, body {{
+        margin: 0;
+        padding: 0;
+        background: transparent;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      }}
+      .clip-link-{safe_key} {{
+        display: inline-block;
+        color: #6366f1;
+        font-size: 13px;
         font-weight: 500;
         cursor: pointer;
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-        height: 32px;
-        line-height: 1.2;
-        width: 100%;
-        transition: background 0.15s ease, border-color 0.15s ease;
+        padding: 6px 0;
+        user-select: none;
+        transition: color 0.15s ease;
       }}
-      .clip-btn-{safe_key}:hover {{ background: #4f46e5; border-color: #4f46e5; }}
-      .clip-btn-{safe_key}.copied {{ background: #059669; border-color: #059669; }}
+      .clip-link-{safe_key}:hover {{
+        color: #4f46e5;
+        text-decoration: underline;
+      }}
+      .clip-status-{safe_key} {{
+        display: block;
+        font-size: 12.5px;
+        font-weight: 600;
+        margin-top: 2px;
+        opacity: 0;
+        transition: opacity 0.3s ease;
+        pointer-events: none;
+      }}
+      .clip-status-{safe_key}.show {{ opacity: 1; }}
     </style>
-    <button class="clip-btn-{safe_key}" id="clip-btn-{safe_key}"
-            onclick="copyHtml_{safe_key}()">{_html.escape(button_label)}</button>
+    <span class="clip-link-{safe_key}" id="clip-link-{safe_key}"
+          onclick="copyHtml_{safe_key}()">{_html.escape(button_label)}</span>
+    <div class="clip-status-{safe_key}" id="clip-status-{safe_key}"></div>
     <script>
     (function() {{
       const html_payload = {html_js};
-      const default_label = {label_js};
       window.copyHtml_{safe_key} = function() {{
         const div = document.createElement('div');
         div.contentEditable = 'true';
@@ -600,20 +625,19 @@ def _clipboard_button(
         sel.removeAllRanges();
         document.body.removeChild(div);
 
-        const btn = document.getElementById('clip-btn-{safe_key}');
+        const status = document.getElementById('clip-status-{safe_key}');
         if (ok) {{
-          btn.innerText = '✓ 복사됨';
-          btn.classList.add('copied');
-          setTimeout(function() {{
-            btn.innerText = default_label;
-            btn.classList.remove('copied');
-          }}, 1800);
+          status.innerText = '✅ 복사됨!';
+          status.style.color = '#059669';
         }} else {{
-          btn.innerText = '복사 실패 — 다시 시도';
-          setTimeout(function() {{
-            btn.innerText = default_label;
-          }}, 2200);
+          status.innerText = '⚠️ 복사 실패 — 다시 시도해주세요';
+          status.style.color = '#dc2626';
         }}
+        status.classList.add('show');
+        clearTimeout(window._statusTimer_{safe_key});
+        window._statusTimer_{safe_key} = setTimeout(function() {{
+          status.classList.remove('show');
+        }}, 2500);
       }};
     }})();
     </script>
@@ -753,10 +777,10 @@ if st.session_state.get("preview_active") and st.session_state.get("cached_df") 
                     unsafe_allow_html=True,
                 )
 
-                # 파일명 인라인 편집 + 다운로드 버튼 — 한 줄에 인라인 배치
-                fn_cols = st.columns([0.9, 4, 0.7, 1.6])
+                # 파일명 행 — 라벨 / 입력 / .xlsx / 다운로드 버튼
+                fn_cols = st.columns([0.7, 4.2, 0.7, 1.6])
                 with fn_cols[0]:
-                    st.markdown('<div class="fn-static-label">파일명:</div>', unsafe_allow_html=True)
+                    st.markdown('<div class="fn-static-label">파일명</div>', unsafe_allow_html=True)
                 with fn_cols[1]:
                     st.text_input(
                         "파일명",
@@ -779,28 +803,34 @@ if st.session_state.get("preview_active") and st.session_state.get("cached_df") 
                         use_container_width=True,
                     )
 
-                # 클립보드 복사 행 — 헤더 포함 체크박스 + 복사 버튼
-                clip_cols = st.columns([0.9, 4, 0.7, 1.6])
+                # 행간 여백
+                st.markdown('<div class="card-row-gap"></div>', unsafe_allow_html=True)
+
+                # 클립보드 복사 행 — 라벨 / 텍스트 링크 / 헤더 포함 체크박스
+                # include_header는 체크박스가 뒤에 렌더되므로 session_state에서 먼저 읽어 링크 HTML에 반영
+                include_header = bool(st.session_state.get("clip_include_header", False))
+                clip_html = _render_clipboard_html(
+                    CHECKSHEET_HEADERS, results_by_day, include_header=include_header
+                )
+
+                clip_cols = st.columns([0.7, 2.3, 2.0, 2.2])
                 with clip_cols[0]:
-                    st.markdown('<div class="fn-static-label">복사:</div>', unsafe_allow_html=True)
+                    st.markdown('<div class="fn-static-label">복사</div>', unsafe_allow_html=True)
                 with clip_cols[1]:
-                    include_header = st.checkbox(
+                    _clipboard_button(
+                        clip_html,
+                        button_label="📋 클립보드에 복사",
+                        key=f"clip_{range_label}_{int(include_header)}",
+                    )
+                with clip_cols[2]:
+                    st.checkbox(
                         "헤더 포함",
                         value=False,
                         key="clip_include_header",
                         help="체크하면 검수시트 컬럼 헤더 1행도 함께 복사돼요. 보통은 해제(데이터만 복사).",
                     )
-                with clip_cols[2]:
-                    st.markdown('<div class="fn-ext"></div>', unsafe_allow_html=True)
                 with clip_cols[3]:
-                    clip_html = _render_clipboard_html(
-                        CHECKSHEET_HEADERS, results_by_day, include_header=include_header
-                    )
-                    _clipboard_button(
-                        clip_html,
-                        button_label="📋 구글시트로 복사",
-                        key=f"clip_{range_label}_{int(include_header)}",
-                    )
+                    pass
 
         except Exception as e:
             st.error(f"엑셀 생성 실패: {e}")
