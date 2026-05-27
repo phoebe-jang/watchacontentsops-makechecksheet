@@ -24,6 +24,7 @@ from converter import (
     DAYS,
     WEEKDAYS,
     COL_A,
+    COL_TIER,
     COL_MAPPING_TYPE,
     COL_EPISODE_NUMBER,
     COL_FORMAL_NUMBER,
