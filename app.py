@@ -176,10 +176,13 @@ st.markdown(
         margin-bottom: 8px;
     }
     /* 파일명 입력 — 항상 보이는 부드러운 박스, .xlsx 접미를 박스 안에 통합(::after).
-       다운로드 카드(.dl-accent 마커) 내부 stTextInput만 정확히 타게팅 */
+       다운로드 카드(.dl-accent 마커) 내부 stTextInput만 정확히 타게팅.
+       wrapper 자체에도 max-width 360px → ::after(right:14px)가 input 박스 안 우측에 정확히 위치 */
     [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .dl-accent) [data-testid="stTextInput"] {
         position: relative;
         margin: 0 !important;
+        max-width: 360px !important;
+        width: 100% !important;
     }
     [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .dl-accent) [data-testid="stTextInput"]::after {
         content: '.xlsx';
@@ -187,14 +190,14 @@ st.markdown(
         right: 14px;
         top: 50%;
         transform: translateY(-50%);
-        color: #64748b;
+        color: #94a3b8;
         font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
         font-size: 13px;
         line-height: 1;
         pointer-events: none;
         z-index: 2;
     }
-    /* BaseWeb input 래퍼들의 기본 배경/그림자 전부 transparent — input 자체만 회색 박스로 보이게 */
+    /* BaseWeb input 래퍼들의 기본 배경/그림자 전부 transparent — input 자체만 보이게 */
     [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .dl-accent) [data-testid="stTextInput"] > div,
     [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .dl-accent) [data-testid="stTextInput"] [data-baseweb="input"],
     [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .dl-accent) [data-testid="stTextInput"] [data-baseweb="base-input"] {
@@ -203,11 +206,11 @@ st.markdown(
         box-shadow: none !important;
         border: none !important;
     }
-    /* 파일명 input — Streamlit 파일 업로드 dropzone 톤(연회색 박스)으로. 위 카드와 시각 통일 */
+    /* 파일명 input — 거의 흰색(#f9f9f9) + 얇은 회색 보더만. 그림자/음영 없음 */
     [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .dl-accent) [data-testid="stTextInput"] input {
-        background: #f1f5f9 !important;
-        background-color: #f1f5f9 !important;
-        border: 1px solid transparent !important;
+        background: #f9f9f9 !important;
+        background-color: #f9f9f9 !important;
+        border: 1px solid #e5e7eb !important;
         border-radius: 8px !important;
         box-shadow: none !important;
         color: #0f172a !important;
@@ -215,20 +218,21 @@ st.markdown(
         font-size: 13px !important;
         padding: 4px 56px 4px 14px !important;
         height: 38px !important;
+        width: 100% !important;
         max-width: 360px !important;
-        transition: background 0.15s ease, border-color 0.15s ease;
+        transition: border-color 0.15s ease;
         cursor: text;
     }
     /* 카드 안의 가로 행 컬럼 사이 간격 좁히기 (Streamlit 기본 1rem → 0.5rem) */
     [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .dl-accent) [data-testid="stHorizontalBlock"] {
         gap: 0.5rem !important;
     }
+    /* 호버 — 배경은 그대로, 보더만 살짝 어두워짐 */
     [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .dl-accent) [data-testid="stTextInput"] input:hover {
-        background: #e2e8f0 !important;
-        background-color: #e2e8f0 !important;
+        border-color: #d1d5db !important;
         box-shadow: none !important;
     }
-    /* 포커스 — 흰 배경으로 살짝 밝아지면서 인디고 보더 (글로우 없이) */
+    /* 포커스 — 흰 배경 + 인디고 보더만 (글로우 없이) */
     [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .dl-accent) [data-testid="stTextInput"] input:focus {
         background: #ffffff !important;
         background-color: #ffffff !important;
@@ -775,7 +779,7 @@ if st.session_state.get("preview_active") and st.session_state.get("cached_df") 
         stats[3].metric("결방/홀드백 합계", total_cancel)
         stats[4].metric("EBS 섹션", total_ebs)
 
-        range_label = f"{days[0]}~{days[-1]}요일" if len(days) > 1 else f"{days[0]}요일"
+        range_label = f"{days[0]}-{days[-1]}요일" if len(days) > 1 else f"{days[0]}요일"
         st.markdown(f"### 📋 {range_label} 검수시트 미리보기")
         st.caption(
             "데이터가 채워지는 컬럼만 표시했어요(공란 컬럼은 숨김). 다운로드 파일은 검수시트 70개 컬럼 그대로 나옵니다. "

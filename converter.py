@@ -782,7 +782,7 @@ def build_xlsx(df: pd.DataFrame, days: list[str] | str, excluded_indices: set[in
 
     wb = Workbook()
     ws = wb.active
-    ws.title = f"{days[0]}~{days[-1]}요일" if len(days) > 1 else f"{days[0]}요일"
+    ws.title = f"{days[0]}-{days[-1]}요일" if len(days) > 1 else f"{days[0]}요일"
 
     # 색상 매핑 선택: 구글시트 호환 모드 vs 기본 (검수시트 템플릿)
     fill_for = _gs_fill_for if gsheet_mode else _fill_for
