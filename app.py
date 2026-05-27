@@ -223,9 +223,37 @@ st.markdown(
         transition: border-color 0.15s ease;
         cursor: text;
     }
-    /* 카드 안의 가로 행 컬럼 사이 간격 좁히기 (Streamlit 기본 1rem → 0.5rem) */
+    /* 카드 안의 가로 행 — 컬럼 간격 좁힘 + 모든 컬럼 콘텐츠 세로 중앙 정렬 (라벨/입력/버튼/체크박스 baseline 통일) */
     [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .dl-accent) [data-testid="stHorizontalBlock"] {
         gap: 0.5rem !important;
+        align-items: center !important;
+    }
+    /* 카드 안 모든 stElementContainer/stVerticalBlock도 세로 중앙 정렬되도록 자체 정렬 (flex 자식 alignment) */
+    [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .dl-accent) [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
+        align-self: center !important;
+        display: flex !important;
+        flex-direction: column !important;
+        justify-content: center !important;
+    }
+    /* 체크박스 — 박스와 라벨 텍스트, 도움말(❓) 아이콘이 세로 중앙으로 정렬되도록 강제 flex center */
+    [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .dl-accent) [data-testid="stCheckbox"] label {
+        display: flex !important;
+        align-items: center !important;
+        gap: 6px !important;
+    }
+    [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .dl-accent) [data-testid="stCheckbox"] label > * {
+        display: flex !important;
+        align-items: center !important;
+    }
+    [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .dl-accent) [data-testid="stCheckbox"] label p {
+        margin: 0 !important;
+        line-height: 1 !important;
+    }
+    /* 도움말 아이콘(stTooltipIcon)도 정렬 — 라벨 텍스트 baseline 맞춤 */
+    [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .dl-accent) [data-testid="stTooltipIcon"],
+    [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .dl-accent) [data-testid="stCheckbox"] [data-testid="stTooltipHoverTarget"] {
+        display: inline-flex !important;
+        align-items: center !important;
     }
     /* 호버 — 배경은 그대로, 보더만 살짝 어두워짐 */
     [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .dl-accent) [data-testid="stTextInput"] input:hover {
@@ -598,26 +626,34 @@ def _clipboard_button(
         background: transparent;
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       }}
+      /* body를 flex로 → 링크가 iframe 안에서 세로 중앙 (다른 컬럼 요소들과 baseline 통일) */
+      body {{
+        height: {height}px;
+        display: flex;
+        align-items: center;
+      }}
       .clip-link-{safe_key} {{
         display: inline-block;
         color: #6366f1;
         font-size: 13px;
         font-weight: 500;
         cursor: pointer;
-        padding: 6px 0;
         user-select: none;
         white-space: nowrap;
+        line-height: 1;
         transition: color 0.15s ease;
       }}
       .clip-link-{safe_key}:hover {{
         color: #4f46e5;
         text-decoration: underline;
       }}
+      /* 상태 메시지는 absolute로 빼서 링크 위치에 영향 안 주게 — iframe 하단에 노출 */
       .clip-status-{safe_key} {{
-        display: block;
+        position: absolute;
+        bottom: 4px;
+        left: 0;
         font-size: 12.5px;
         font-weight: 600;
-        margin-top: 2px;
         opacity: 0;
         transition: opacity 0.3s ease;
         pointer-events: none;
