@@ -816,8 +816,9 @@ if st.session_state.get("preview_active") and st.session_state.get("cached_df") 
                     unsafe_allow_html=True,
                 )
 
-                # 파일명 행 — 라벨 / [input + .xlsx(::after로 내부 통합)] / 콤팩트 다운로드 버튼 / 버퍼
-                fn_cols = st.columns([0.5, 3.2, 1.3, 2.2])
+                # 파일명 행 — 라벨 / [input + .xlsx(::after로 내부 통합)] / 콤팩트 다운로드 버튼 / 큰 버퍼
+                # sum 15, 마지막 컬럼을 크게 가져가서 좌측 요소들이 자연스럽게 밀집
+                fn_cols = st.columns([1, 5, 2, 7])
                 with fn_cols[0]:
                     st.markdown('<div class="fn-static-label">파일명</div>', unsafe_allow_html=True)
                 with fn_cols[1]:
@@ -850,8 +851,9 @@ if st.session_state.get("preview_active") and st.session_state.get("cached_df") 
                     CHECKSHEET_HEADERS, results_by_day, include_header=include_header
                 )
 
-                # 카드 안 가로 행 gap을 8px로 줄였으므로 컬럼 비율도 타이트하게
-                clip_cols = st.columns([0.5, 1.7, 1.3, 3.7])
+                # 라벨/링크/체크박스를 좌측에 일렬로 밀집 — 빈 마지막 컬럼(10)으로 우측 공간 흡수
+                # sum 15로 파일명 행과 동일 → 라벨 컬럼 너비가 정확히 정렬됨
+                clip_cols = st.columns([1, 2, 2, 10])
                 with clip_cols[0]:
                     st.markdown('<div class="fn-static-label">복사</div>', unsafe_allow_html=True)
                 with clip_cols[1]:
