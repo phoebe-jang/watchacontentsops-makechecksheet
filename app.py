@@ -223,37 +223,73 @@ st.markdown(
         transition: border-color 0.15s ease;
         cursor: text;
     }
-    /* 카드 안의 가로 행 — 컬럼 간격 좁힘 + 모든 컬럼 콘텐츠 세로 중앙 정렬 (라벨/입력/버튼/체크박스 baseline 통일) */
+    /* === 카드 안 모든 요소 세로 baseline 통일 강제 === */
+
+    /* (1) Streamlit element 래퍼 기본 margin/padding 전부 제거 — 베이스라인 어긋남 주범 */
+    [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .dl-accent) [data-testid="stElementContainer"],
+    [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .dl-accent) [data-testid="stMarkdown"],
+    [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .dl-accent) [data-testid="stMarkdownContainer"] {
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+
+    /* (2) iframe(클립보드 컴포넌트) 래퍼 — display:block + 마진 0 + vertical-align middle + 보더 제거 */
+    [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .dl-accent) iframe {
+        margin: 0 !important;
+        padding: 0 !important;
+        border: none !important;
+        display: block !important;
+        vertical-align: middle !important;
+    }
+
+    /* (3) 가로 행 — 컬럼 간격 좁힘 + 모든 컬럼 세로 중앙 정렬 */
     [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .dl-accent) [data-testid="stHorizontalBlock"] {
         gap: 0.5rem !important;
         align-items: center !important;
     }
-    /* 카드 안 모든 stElementContainer/stVerticalBlock도 세로 중앙 정렬되도록 자체 정렬 (flex 자식 alignment) */
+
+    /* (4) 각 컬럼 — flex column + justify-content:center로 자기 안 자식 세로 중앙 */
     [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .dl-accent) [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
         align-self: center !important;
         display: flex !important;
         flex-direction: column !important;
         justify-content: center !important;
     }
-    /* 체크박스 — 박스와 라벨 텍스트, 도움말(❓) 아이콘이 세로 중앙으로 정렬되도록 강제 flex center */
+
+    /* (5) 체크박스 — 컨테이너 마진/패딩 제거 + 내부 box+라벨+❓ 다 flex center */
+    [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .dl-accent) [data-testid="stCheckbox"] {
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+    [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .dl-accent) [data-testid="stCheckbox"] > label,
     [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .dl-accent) [data-testid="stCheckbox"] label {
         display: flex !important;
         align-items: center !important;
         gap: 6px !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        line-height: 1 !important;
     }
     [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .dl-accent) [data-testid="stCheckbox"] label > * {
         display: flex !important;
         align-items: center !important;
-    }
-    [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .dl-accent) [data-testid="stCheckbox"] label p {
         margin: 0 !important;
-        line-height: 1 !important;
     }
-    /* 도움말 아이콘(stTooltipIcon)도 정렬 — 라벨 텍스트 baseline 맞춤 */
+    [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .dl-accent) [data-testid="stCheckbox"] label p,
+    [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .dl-accent) [data-testid="stCheckbox"] label span {
+        margin: 0 !important;
+        padding: 0 !important;
+        line-height: 1 !important;
+        font-size: 13px !important;
+    }
+
+    /* (6) 도움말 ❓ 아이콘 — 라벨 텍스트와 베이스라인 통일 */
     [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .dl-accent) [data-testid="stTooltipIcon"],
     [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .dl-accent) [data-testid="stCheckbox"] [data-testid="stTooltipHoverTarget"] {
         display: inline-flex !important;
         align-items: center !important;
+        line-height: 1 !important;
+        margin: 0 !important;
     }
     /* 호버 — 배경은 그대로, 보더만 살짝 어두워짐 */
     [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .dl-accent) [data-testid="stTextInput"] input:hover {
@@ -269,13 +305,15 @@ st.markdown(
         outline: none !important;
     }
 
-    /* 카드 행 미니 라벨 — '파일명' / '복사'. 13px 통일, input/버튼(38px)과 수직 정렬 */
+    /* 카드 행 미니 라벨 — '파일명' / '복사'. line-height:1로 text-only 박스. 컬럼이 자체 flex center로 세로 중앙 정렬 */
     .fn-static-label {
         font-size: 13px;
         color: #64748b;
         font-weight: 500;
         letter-spacing: 0;
-        line-height: 38px;
+        line-height: 1;
+        margin: 0;
+        padding: 0;
         white-space: nowrap;
         font-family: inherit;
     }
