@@ -1,9 +1,12 @@
 """검수시트 자동 생성기 - Streamlit UI."""
 import html as _html
+import io
+import json
 import re
 from datetime import date
 
 import streamlit as st
+import streamlit.components.v1 as components
 
 
 def _sanitize_filename(name: str) -> str:
@@ -215,8 +218,46 @@ st.caption(
     "주간편성표 CSV를 업로드하고 요일 범위를 선택하면, 검수시트 엑셀과 동일한 컬럼 구조로 변환된 미리보기·xlsx 다운로드가 제공됩니다."
 )
 
+# 편성표 입력에서 기대하는 컬럼 헤더 (20컬럼 풀셋). 19컬럼(끝의 "창고" 누락)도 허용.
+EXPECTED_HEADERS = [
+    "비고", "예약작", "오픈일", "요일", "시간", "Tier", "id", "code", "Title",
+    "지난주 e/n", "지난주 f/n", "이번주 e/n", "이번주 f/n", "오픈 에피 수",
+    "편성비고", "WX/동시방영", "최종회차", "CP bill", "원본경로", "창고",
+]
+REQUIRED_HEADERS_MIN = set(EXPECTED_HEADERS) - {"창고"}  # 창고는 옵셔널
+
+
+def _validate_headers(df) -> tuple[bool, str]:
+    """편성표 입력 헤더 검증. (ok, message) 반환."""
+    cols = list(df.columns)
+    n = len(cols)
+    if n not in (19, 20):
+        return False, (
+            f"컬럼 개수가 {n}개입니다. 편성표는 19개(창고 제외) 또는 20개 컬럼이어야 해요.\n"
+            f"기대 헤더: {', '.join(EXPECTED_HEADERS)}"
+        )
+    missing = REQUIRED_HEADERS_MIN - set(cols)
+    if missing:
+        return False, f"필수 컬럼 누락: {', '.join(sorted(missing))}"
+    return True, ""
+
+
 with st.container(border=True):
-    uploaded = st.file_uploader("편성표 CSV 업로드", type=["csv"])
+    input_tabs = st.tabs(["📂 CSV 업로드", "📋 텍스트 붙여넣기"])
+    with input_tabs[0]:
+        uploaded = st.file_uploader("편성표 CSV 업로드", type=["csv"], label_visibility="collapsed")
+    with input_tabs[1]:
+        pasted_text = st.text_area(
+            "편성표 텍스트 붙여넣기",
+            height=180,
+            key="pasted_text",
+            placeholder=(
+                "구글시트/엑셀에서 헤더 행 포함하여 셀들을 복사한 후 여기 붙여넣으세요.\n"
+                "탭 구분(TSV) 자동 감지. 쉼표 구분(CSV)도 OK."
+            ),
+            label_visibility="collapsed",
+        )
+
     cols = st.columns([2, 2, 2])
     with cols[0]:
         start_day = st.selectbox("시작 요일", WEEKDAYS, index=0)
@@ -265,9 +306,9 @@ def _row_bg(category: str, no_fill: bool = False, over_final: bool = False) -> s
     if category == "header_holiday":
         return "#00ff00"  # 휴일 형광 초록 (템플릿)
     if category == "reserved":
-        return "#fecbdf"  # 예약작 핑크 (템플릿)
+        return "#ead1dc"  # 예약작 — 연한 자홍색 3 (xlsx와 동기화)
     if category == "cancelled":
-        return "#ead1dc"  # 결방/홀드백 옅은 보라핑크 (템플릿)
+        return "#e6b8af"  # 결방/홀드백 — 연한 붉은 딸기색 3 (xlsx와 동기화)
     if category == "ebs":
         return "#ffffff"  # EBS 콘텐츠 행은 음영 없음
     if category == "holiday_header":
@@ -275,7 +316,7 @@ def _row_bg(category: str, no_fill: bool = False, over_final: bool = False) -> s
     if category == "holiday_body":
         return "#cccccc"  # 연휴지연 콘텐츠 (더 진한 회색)
     if category == "prev_day":
-        return "#fecbdf"  # 전날 셋팅 = 예약작과 동일 핑크
+        return "#ead1dc"  # 전날 셋팅 = 예약작과 동일 (xlsx와 동기화)
     return "#ffffff"
 
 
@@ -404,18 +445,207 @@ def _render_preview(headers, results_by_day: list[tuple[str, dict]]) -> str:
     return "".join(parts)
 
 
+def _render_clipboard_html(headers, results_by_day, include_header: bool = False) -> str:
+    """클립보드 복사용 HTML 생성 — 검수시트 70컬럼 전체.
+    구글시트에 붙여넣었을 때 서식(음영/굵기/정렬)이 유지되도록 인라인 스타일 사용.
+    원칙: 매핑 컬러 제거 · 테두리 제거 · A열 종영 스타일 제거 · 연휴지연 헤더만 빨간 굵게 유지 ·
+          EBS 행 일반 굵기 · Tier 좌측 정렬 · '결방' 셀 우측 정렬.
+    """
+    indices = list(range(len(headers)))  # 70컬럼 전체
+
+    parts = [
+        "<table style='border-collapse:collapse;"
+        "font-family:Arial,Helvetica,sans-serif;font-size:10pt'>"
+    ]
+
+    if include_header:
+        parts.append("<tr style='background:#d9d9d9'>")
+        for i in indices:
+            h = headers[i] if headers[i] else ""
+            parts.append(
+                f"<td style='padding:2px 6px;font-weight:600'>{_esc(h)}</td>"
+            )
+        parts.append("</tr>")
+
+    def emit_clip_row(entry, *, override_bg: str | None = None, force_bold_a: bool = False) -> None:
+        cat = entry["category"]
+        no_fill = bool(entry.get("no_fill", False))
+        is_over = bool(entry.get("over_final"))
+        bg = override_bg if override_bg is not None else _row_bg(cat, no_fill, is_over)
+        bg_style = f"background:{bg};" if bg and bg != "#ffffff" else ""
+        parts.append(f"<tr style='{bg_style}'>")
+
+        for i in indices:
+            v = entry["values"][i] if i < len(entry["values"]) else ""
+            v_str = str(v) if v is not None else ""
+
+            # 셀 컨텐츠 — 매핑 컬러 배지 제거. A열 종영 셀도 일반 텍스트로 (볼드·노란음영 제거).
+            # 단, 연휴지연 헤더의 A열만 빨간 굵게 유지.
+            if i == COL_A and cat == "holiday_header":
+                content = f"<span style='font-weight:700;color:#ff0000'>{_esc(v_str)}</span>"
+            elif i == COL_A and force_bold_a:
+                # EBS 배너 행 A열 — 클립보드에서는 일반 굵기 (요청: EBS 볼드 → 일반)
+                content = _esc(v_str)
+            else:
+                content = _esc(v_str)
+
+            # 정렬: Tier 좌측 / "결방"만 정확히 일치할 때 우측 / 그 외 기본
+            align_style = ""
+            if i == COL_TIER:
+                align_style = "text-align:left;"
+            if v_str == "결방":
+                align_style = "text-align:right;"
+
+            parts.append(
+                f"<td style='padding:2px 6px;{align_style}'>{content}</td>"
+            )
+        parts.append("</tr>")
+
+    for d, result in results_by_day:
+        emit_clip_row(result["header_row"])
+        for r in result["body"]:
+            emit_clip_row(r)
+        for r in result["cancelled"]:
+            emit_clip_row(r)
+        for r in result.get("holiday_block", []):
+            emit_clip_row(r)
+        if d == "금" and result["ebs_section"]:
+            # EBS 배너 — 회색 배경, 일반 굵기로 "EBS"만 표시
+            parts.append("<tr style='background:#d9d9d9'>")
+            for i in indices:
+                label = "EBS" if i == COL_A else ""
+                parts.append(f"<td style='padding:2px 6px'>{_esc(label)}</td>")
+            parts.append("</tr>")
+            for r in result["ebs_section"]:
+                emit_clip_row(r)
+
+    parts.append("</table>")
+    return "".join(parts)
+
+
+def _clipboard_button(
+    html_content: str,
+    *,
+    button_label: str = "📋 구글시트로 복사",
+    key: str = "clip",
+    height: int = 48,
+) -> None:
+    """클립보드 복사 버튼 (Streamlit components iframe).
+
+    구현 메모: navigator.clipboard.write()는 iframe sandbox에서 권한 문제로
+    조용히 실패하는 경우가 있어, 호환성이 가장 좋은 execCommand('copy') +
+    contentEditable div + copy 이벤트(text/html + text/plain) 방식을 사용한다.
+    """
+    html_js = json.dumps(html_content)  # JS 문자열로 안전하게 임베드
+    label_js = json.dumps(button_label)
+    safe_key = re.sub(r"[^A-Za-z0-9_]", "_", key)
+    component_html = f"""
+    <style>
+      .clip-btn-{safe_key} {{
+        background: #6366f1;
+        color: #ffffff;
+        border: 1px solid #6366f1;
+        padding: 6px 14px;
+        border-radius: 7px;
+        font-size: 12.5px;
+        font-weight: 500;
+        cursor: pointer;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        height: 32px;
+        line-height: 1.2;
+        width: 100%;
+        transition: background 0.15s ease, border-color 0.15s ease;
+      }}
+      .clip-btn-{safe_key}:hover {{ background: #4f46e5; border-color: #4f46e5; }}
+      .clip-btn-{safe_key}.copied {{ background: #059669; border-color: #059669; }}
+    </style>
+    <button class="clip-btn-{safe_key}" id="clip-btn-{safe_key}"
+            onclick="copyHtml_{safe_key}()">{_html.escape(button_label)}</button>
+    <script>
+    (function() {{
+      const html_payload = {html_js};
+      const default_label = {label_js};
+      window.copyHtml_{safe_key} = function() {{
+        const div = document.createElement('div');
+        div.contentEditable = 'true';
+        div.innerHTML = html_payload;
+        div.style.position = 'fixed';
+        div.style.left = '-99999px';
+        div.style.top = '0';
+        div.style.opacity = '0';
+        document.body.appendChild(div);
+
+        const onCopy = function(e) {{
+          e.clipboardData.setData('text/html', html_payload);
+          e.clipboardData.setData('text/plain', div.innerText);
+          e.preventDefault();
+        }};
+        document.addEventListener('copy', onCopy);
+
+        const range = document.createRange();
+        range.selectNodeContents(div);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+
+        let ok = false;
+        try {{
+          ok = document.execCommand('copy');
+        }} catch (err) {{
+          ok = false;
+        }}
+
+        document.removeEventListener('copy', onCopy);
+        sel.removeAllRanges();
+        document.body.removeChild(div);
+
+        const btn = document.getElementById('clip-btn-{safe_key}');
+        if (ok) {{
+          btn.innerText = '✓ 복사됨';
+          btn.classList.add('copied');
+          setTimeout(function() {{
+            btn.innerText = default_label;
+            btn.classList.remove('copied');
+          }}, 1800);
+        }} else {{
+          btn.innerText = '복사 실패 — 다시 시도';
+          setTimeout(function() {{
+            btn.innerText = default_label;
+          }}, 2200);
+        }}
+      }};
+    }})();
+    </script>
+    """
+    components.html(component_html, height=height)
+
+
 # 변환 미리보기 버튼이 눌리면 결과를 session_state에 캐시 — 다운로드 버튼 클릭으로
 # Streamlit이 rerun을 트리거해도 미리보기가 그대로 유지되도록.
 if run:
-    if uploaded is None:
-        st.error("먼저 편성표 CSV 파일을 업로드해주세요.")
+    text_input = (pasted_text or "").strip()
+    if uploaded is None and not text_input:
+        st.error("CSV 파일을 업로드하거나 텍스트를 붙여넣어주세요.")
         st.session_state.pop("preview_active", None)
     else:
+        df_now = None
         try:
-            df_now = parse_csv(uploaded)
+            if text_input:
+                # 첫 줄에 탭이 있으면 TSV(구글시트 복사), 아니면 CSV
+                first_line = text_input.split("\n", 1)[0]
+                sep = "\t" if "\t" in first_line else ","
+                df_now = parse_csv(io.StringIO(text_input), sep=sep)
+            else:
+                df_now = parse_csv(uploaded)
         except Exception as e:
-            st.error(f"CSV 파싱 실패: {e}")
+            st.error(f"편성표 파싱 실패: {e}")
             st.stop()
+
+        ok, msg = _validate_headers(df_now)
+        if not ok:
+            st.error(f"편성표 헤더 검증 실패\n\n{msg}")
+            st.stop()
+
         days_now = select_day_range(start_day, end_day)
         if not days_now:
             st.error("요일 선택이 잘못되었습니다.")
@@ -515,8 +745,8 @@ if st.session_state.get("preview_active") and st.session_state.get("cached_df") 
                 st.markdown(
                     """
                     <div class="dl-accent">
-                        <div class="dl-card-title">검수시트 엑셀 준비 완료</div>
-                        <div class="dl-card-sub">선택한 요일 범위가 한 시트에 이어 출력돼요. 행 단위로 그대로 복사해 검수시트에 붙여넣으면 됩니다.</div>
+                        <div class="dl-card-title">검수시트 준비 완료</div>
+                        <div class="dl-card-sub">xlsx로 다운로드하거나 구글시트로 바로 복사할 수 있어요. 클립보드 복사는 셀 색·정렬·굵기까지 유지됩니다.</div>
                     </div>
                     """,
                     unsafe_allow_html=True,
@@ -546,6 +776,29 @@ if st.session_state.get("preview_active") and st.session_state.get("cached_df") 
                         file_name=filename,
                         mime="application/vnd.openxlsxformats-officedocument.spreadsheetml.sheet",
                         use_container_width=True,
+                    )
+
+                # 클립보드 복사 행 — 헤더 포함 체크박스 + 복사 버튼
+                clip_cols = st.columns([0.9, 4, 0.7, 1.6])
+                with clip_cols[0]:
+                    st.markdown('<div class="fn-static-label">복사:</div>', unsafe_allow_html=True)
+                with clip_cols[1]:
+                    include_header = st.checkbox(
+                        "헤더 포함",
+                        value=False,
+                        key="clip_include_header",
+                        help="체크하면 검수시트 컬럼 헤더 1행도 함께 복사돼요. 보통은 해제(데이터만 복사).",
+                    )
+                with clip_cols[2]:
+                    st.markdown('<div class="fn-ext"></div>', unsafe_allow_html=True)
+                with clip_cols[3]:
+                    clip_html = _render_clipboard_html(
+                        CHECKSHEET_HEADERS, results_by_day, include_header=include_header
+                    )
+                    _clipboard_button(
+                        clip_html,
+                        button_label="📋 구글시트로 복사",
+                        key=f"clip_{range_label}_{int(include_header)}",
                     )
 
         except Exception as e:

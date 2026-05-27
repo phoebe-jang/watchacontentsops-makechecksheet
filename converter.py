@@ -155,8 +155,9 @@ def _empty_row() -> list[str]:
     return [""] * len(CHECKSHEET_HEADERS)
 
 
-def parse_csv(file: Any) -> pd.DataFrame:
-    df = pd.read_csv(file, dtype=str).fillna("")
+def parse_csv(file: Any, sep: str = ",") -> pd.DataFrame:
+    """편성표 입력 파싱. sep=',' (CSV 업로드) / sep='\\t' (구글시트에서 복사한 TSV 붙여넣기)."""
+    df = pd.read_csv(file, dtype=str, sep=sep).fillna("")
     df.columns = [str(c).strip() for c in df.columns]
     return df
 
