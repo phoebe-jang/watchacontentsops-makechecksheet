@@ -207,17 +207,28 @@ st.markdown(
         pointer-events: none;
         z-index: 2;
     }
+    /* BaseWeb input 래퍼들의 기본 회색 배경/그림자 제거 — input 자체만 보이게 */
+    [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .dl-accent) [data-testid="stTextInput"] > div,
+    [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .dl-accent) [data-testid="stTextInput"] [data-baseweb="input"],
+    [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .dl-accent) [data-testid="stTextInput"] [data-baseweb="base-input"] {
+        background: transparent !important;
+        background-color: transparent !important;
+        box-shadow: none !important;
+        border: none !important;
+    }
     [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .dl-accent) [data-testid="stTextInput"] input {
         background: #ffffff !important;
+        background-color: #ffffff !important;
         border: 1px solid #e2e8f0 !important;
         border-radius: 8px !important;
+        box-shadow: none !important;
         color: #0f172a !important;
         font-family: ui-monospace, SFMono-Regular, Menlo, monospace !important;
         font-size: 13px !important;
         padding: 4px 56px 4px 12px !important;
         height: 32px !important;
         max-width: 360px !important;
-        transition: border-color 0.15s ease, box-shadow 0.15s ease;
+        transition: border-color 0.15s ease;
         cursor: text;
     }
     /* 카드 안의 가로 행 컬럼 사이 간격 좁히기 (Streamlit 기본 1rem → 0.5rem) */
@@ -226,10 +237,13 @@ st.markdown(
     }
     [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .dl-accent) [data-testid="stTextInput"] input:hover {
         border-color: #cbd5e1 !important;
+        box-shadow: none !important;
     }
+    /* 포커스 시에도 인디고 글로우 없이 보더 색만 바뀜 — 사용자 요청: 깔끔한 흰 배경 + 얇은 테두리만 */
     [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .dl-accent) [data-testid="stTextInput"] input:focus {
         border-color: #6366f1 !important;
-        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15) !important;
+        box-shadow: none !important;
+        outline: none !important;
     }
 
     /* 카드 행 미니 라벨 — '파일명' / '복사'. 13px 통일, 입력 필드와 같은 크기. */
