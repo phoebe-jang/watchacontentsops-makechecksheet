@@ -1,4 +1,6 @@
 """검수시트 자동 생성기 - Streamlit UI."""
+from __future__ import annotations
+
 import html as _html
 import io
 import json
@@ -117,34 +119,41 @@ st.markdown(
         margin: 0;
         font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     }
-    /* 다운로드 버튼 — 작고 차분한 그린(emerald), 파일명 옆 인라인 */
+    /* 다운로드 버튼 — 모던하게 폴리시드된 emerald (subtle inset highlight + 더 부드러운 그림자) */
     div[data-testid="stDownloadButton"] > button {
-        background: #059669 !important;
+        background: #10b981 !important;
         color: #ffffff !important;
-        border: 1px solid #059669 !important;
-        padding: 5px 12px !important;
-        border-radius: 7px !important;
-        font-size: 12.5px !important;
-        font-weight: 500 !important;
+        border: 1px solid #10b981 !important;
+        padding: 6px 14px !important;
+        border-radius: 8px !important;
+        font-size: 13px !important;
+        font-weight: 600 !important;
         font-family: inherit !important;
         letter-spacing: 0 !important;
-        box-shadow: 0 1px 2px rgba(5, 150, 105, 0.15) !important;
-        transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+        box-shadow: 0 1px 2px rgba(16, 185, 129, 0.18),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.14) !important;
+        transition: background 0.15s ease, border-color 0.15s ease,
+                    box-shadow 0.15s ease, transform 0.05s ease;
         width: 100% !important;
         height: 32px !important;
         line-height: 1.2 !important;
     }
     div[data-testid="stDownloadButton"] > button:hover {
-        background: #047857 !important;
-        border-color: #047857 !important;
+        background: #059669 !important;
+        border-color: #059669 !important;
+        box-shadow: 0 2px 6px rgba(5, 150, 105, 0.26),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.14) !important;
     }
     div[data-testid="stDownloadButton"] > button:active {
-        background: #065f46 !important;
+        background: #047857 !important;
+        border-color: #047857 !important;
+        transform: translateY(1px);
+        box-shadow: 0 1px 2px rgba(5, 150, 105, 0.2) !important;
     }
     div[data-testid="stDownloadButton"] > button p {
         margin: 0 !important;
-        font-size: 12.5px !important;
-        font-weight: 500 !important;
+        font-size: 13px !important;
+        font-weight: 600 !important;
     }
     /* 시작 요일 셀렉트박스와 변환 미리보기 버튼 정렬용 */
     .label-spacer {
@@ -160,12 +169,15 @@ st.markdown(
     .hint-list > div {
         padding-left: 2px;
     }
-    /* container(border=True) 박스 — 모던 SaaS 톤 */
-    [data-testid="stVerticalBlockBorderWrapper"] {
+    /* 카드 컨테이너 — Streamlit 1.50의 st.container(border=True)는 stVerticalBlock에 보더를
+       직접 적용함. 다운로드 카드(.dl-accent 마커 보유)만 :has()로 정확히 잡아 우리 톤(연한 회색
+       + 부드러운 그림자)으로 덮어씌움. > stElementContainer로 깊이 제한 → 상위 컨테이너 미스매치 */
+    [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .dl-accent) {
         border: 1px solid #e2e8f0 !important;
         border-radius: 14px !important;
-        box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 6px 18px rgba(15, 23, 42, 0.05);
-        background: #ffffff;
+        box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04),
+                    0 6px 18px rgba(15, 23, 42, 0.05) !important;
+        background: #ffffff !important;
     }
     /* 다운로드 카드 강조용 그린 좌측 보더 (다운로드 액션 카드 전용 markdown 클래스로 적용) */
     .dl-accent {
@@ -174,53 +186,63 @@ st.markdown(
         margin-left: -2px;
         margin-bottom: 8px;
     }
-    /* 파일명 인라인 편집 — Notion 스타일 호버/포커스 효과 */
-    [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stTextInput"] input {
-        background: transparent;
-        border: 1px dashed transparent;
-        color: #475569;
-        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-        font-size: 13px;
-        padding: 4px 8px;
-        height: 32px;
-        transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
-        cursor: text;
-    }
-    [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stTextInput"] input:hover {
-        background: #f1f5f9;
-        border-color: #cbd5e1;
-    }
-    [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stTextInput"] input:focus {
-        background: #ffffff;
-        border: 1px solid #6366f1;
-        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
-        color: #0f172a;
-    }
-    [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stTextInput"] {
+    /* 파일명 입력 — 항상 보이는 부드러운 박스, .xlsx 접미를 박스 안에 통합(::after).
+       다운로드 카드(.dl-accent 마커) 내부 stTextInput만 정확히 타게팅 */
+    [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .dl-accent) [data-testid="stTextInput"] {
+        position: relative;
         margin: 0 !important;
     }
-    /* 카드 행 미니 라벨 — '파일명' / '복사' 등. 모던 미니멀(소문자 sans-serif, 약한 회색). */
+    [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .dl-accent) [data-testid="stTextInput"]::after {
+        content: '.xlsx';
+        position: absolute;
+        right: 12px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: #94a3b8;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 13px;
+        line-height: 1;
+        pointer-events: none;
+        z-index: 2;
+    }
+    [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .dl-accent) [data-testid="stTextInput"] input {
+        background: #ffffff !important;
+        border: 1px solid #e2e8f0 !important;
+        border-radius: 8px !important;
+        color: #0f172a !important;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace !important;
+        font-size: 13px !important;
+        padding: 4px 56px 4px 12px !important;
+        height: 32px !important;
+        transition: border-color 0.15s ease, box-shadow 0.15s ease;
+        cursor: text;
+    }
+    [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .dl-accent) [data-testid="stTextInput"] input:hover {
+        border-color: #cbd5e1 !important;
+    }
+    [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .dl-accent) [data-testid="stTextInput"] input:focus {
+        border-color: #6366f1 !important;
+        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15) !important;
+    }
+
+    /* 카드 행 미니 라벨 — '파일명' / '복사'. 13px 통일, 입력 필드와 같은 크기. */
     .fn-static-label {
-        font-size: 12px;
+        font-size: 13px;
         color: #94a3b8;
         font-weight: 500;
-        letter-spacing: 0.01em;
+        letter-spacing: 0;
         line-height: 32px;
         white-space: nowrap;
         font-family: inherit;
     }
-    /* 파일 확장자 표기 — 더 약하게, 입력 필드에 자연스럽게 붙어보이도록 */
-    .fn-ext {
-        font-size: 12px;
-        color: #cbd5e1;
-        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-        line-height: 32px;
-        white-space: nowrap;
-        padding-left: 2px;
+    /* 체크박스 라벨도 13px 통일 (다운로드 카드 내) */
+    [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .dl-accent) [data-testid="stCheckbox"] label,
+    [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .dl-accent) [data-testid="stCheckbox"] label p {
+        font-size: 13px !important;
     }
     /* 카드 내 행간 여백 */
     .card-row-gap {
-        height: 6px;
+        height: 8px;
     }
     </style>
     """,
@@ -542,7 +564,7 @@ def _clipboard_button(
     *,
     button_label: str = "📋 클립보드에 복사",
     key: str = "clip",
-    height: int = 60,
+    height: int = 52,
 ) -> None:
     """클립보드 복사 — 텍스트 링크 스타일 + 클릭 시 아래에 '✅ 복사됨!' 페이드 피드백.
 
@@ -777,8 +799,8 @@ if st.session_state.get("preview_active") and st.session_state.get("cached_df") 
                     unsafe_allow_html=True,
                 )
 
-                # 파일명 행 — 라벨 / 입력 / .xlsx / 다운로드 버튼
-                fn_cols = st.columns([0.7, 4.2, 0.7, 1.6])
+                # 파일명 행 — 라벨 / [input + .xlsx(::after로 내부 통합)] / 다운로드 버튼
+                fn_cols = st.columns([0.6, 5.0, 1.6])
                 with fn_cols[0]:
                     st.markdown('<div class="fn-static-label">파일명</div>', unsafe_allow_html=True)
                 with fn_cols[1]:
@@ -786,15 +808,13 @@ if st.session_state.get("preview_active") and st.session_state.get("cached_df") 
                         "파일명",
                         key="filename_base",
                         label_visibility="collapsed",
-                        help="클릭해서 파일명을 수정할 수 있어요. Enter 또는 입력 영역 바깥 클릭으로 저장됩니다.",
+                        help="파일명을 수정할 수 있어요. Enter 또는 바깥 클릭으로 저장됩니다.",
                     )
-                with fn_cols[2]:
-                    st.markdown('<div class="fn-ext">.xlsx</div>', unsafe_allow_html=True)
 
                 edited_base = _sanitize_filename(st.session_state.get("filename_base", "")) or default_base
                 filename = f"{edited_base}.xlsx"
 
-                with fn_cols[3]:
+                with fn_cols[2]:
                     st.download_button(
                         label="⬇ 엑셀 다운로드",
                         data=xlsx_bytes,
@@ -806,14 +826,14 @@ if st.session_state.get("preview_active") and st.session_state.get("cached_df") 
                 # 행간 여백
                 st.markdown('<div class="card-row-gap"></div>', unsafe_allow_html=True)
 
-                # 클립보드 복사 행 — 라벨 / 텍스트 링크 / 헤더 포함 체크박스
+                # 클립보드 복사 행 — 라벨 / 텍스트 링크 / 헤더 포함 체크박스 (서로 바로 옆에 붙도록)
                 # include_header는 체크박스가 뒤에 렌더되므로 session_state에서 먼저 읽어 링크 HTML에 반영
                 include_header = bool(st.session_state.get("clip_include_header", False))
                 clip_html = _render_clipboard_html(
                     CHECKSHEET_HEADERS, results_by_day, include_header=include_header
                 )
 
-                clip_cols = st.columns([0.7, 2.3, 2.0, 2.2])
+                clip_cols = st.columns([0.6, 1.9, 4.7])
                 with clip_cols[0]:
                     st.markdown('<div class="fn-static-label">복사</div>', unsafe_allow_html=True)
                 with clip_cols[1]:
@@ -829,8 +849,6 @@ if st.session_state.get("preview_active") and st.session_state.get("cached_df") 
                         key="clip_include_header",
                         help="체크하면 검수시트 컬럼 헤더 1행도 함께 복사돼요. 보통은 해제(데이터만 복사).",
                     )
-                with clip_cols[3]:
-                    pass
 
         except Exception as e:
             st.error(f"엑셀 생성 실패: {e}")
