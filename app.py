@@ -119,38 +119,33 @@ st.markdown(
         margin: 0;
         font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     }
-    /* 다운로드 버튼 — 모던 emerald, 콘텐츠 너비 콤팩트(width:auto) */
+    /* 다운로드 버튼 — '변환 미리보기'(Streamlit primary) 톤을 색만 초록으로. 솔리드 + 그림자 거의 없음. */
     div[data-testid="stDownloadButton"] > button {
-        background: #10b981 !important;
+        background: #00b46e !important;
         color: #ffffff !important;
-        border: 1px solid #10b981 !important;
+        border: 1px solid #00b46e !important;
         padding: 6px 18px !important;
         border-radius: 8px !important;
         font-size: 13px !important;
         font-weight: 600 !important;
         font-family: inherit !important;
         letter-spacing: 0 !important;
-        box-shadow: 0 1px 2px rgba(16, 185, 129, 0.18),
-                    inset 0 1px 0 rgba(255, 255, 255, 0.14) !important;
-        transition: background 0.15s ease, border-color 0.15s ease,
-                    box-shadow 0.15s ease, transform 0.05s ease;
+        box-shadow: none !important;
+        transition: background 0.15s ease, border-color 0.15s ease;
         width: auto !important;
         min-width: 0 !important;
-        height: 32px !important;
+        height: 38px !important;
         line-height: 1.2 !important;
         white-space: nowrap !important;
     }
     div[data-testid="stDownloadButton"] > button:hover {
-        background: #059669 !important;
-        border-color: #059669 !important;
-        box-shadow: 0 2px 6px rgba(5, 150, 105, 0.26),
-                    inset 0 1px 0 rgba(255, 255, 255, 0.14) !important;
+        background: #009d61 !important;
+        border-color: #009d61 !important;
+        box-shadow: none !important;
     }
     div[data-testid="stDownloadButton"] > button:active {
-        background: #047857 !important;
-        border-color: #047857 !important;
-        transform: translateY(1px);
-        box-shadow: 0 1px 2px rgba(5, 150, 105, 0.2) !important;
+        background: #008555 !important;
+        border-color: #008555 !important;
     }
     div[data-testid="stDownloadButton"] > button p {
         margin: 0 !important;
@@ -171,16 +166,8 @@ st.markdown(
     .hint-list > div {
         padding-left: 2px;
     }
-    /* 카드 컨테이너 — Streamlit 1.50의 st.container(border=True)는 stVerticalBlock에 보더를
-       직접 적용함. 다운로드 카드(.dl-accent 마커 보유)만 :has()로 정확히 잡아 우리 톤(연한 회색
-       + 부드러운 그림자)으로 덮어씌움. > stElementContainer로 깊이 제한 → 상위 컨테이너 미스매치 */
-    [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .dl-accent) {
-        border: 1px solid #e2e8f0 !important;
-        border-radius: 14px !important;
-        box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04),
-                    0 6px 18px rgba(15, 23, 42, 0.05) !important;
-        background: #ffffff !important;
-    }
+    /* 카드 컨테이너 — Streamlit 1.50의 st.container(border=True) 기본 보더를 그대로 사용해
+       위쪽 'CSV 업로드' 카드와 시각적 일관성 유지. 커스텀 shadow/border 덮어씌우지 않음 */
     /* 다운로드 카드 강조용 그린 좌측 보더 (다운로드 액션 카드 전용 markdown 클래스로 적용) */
     .dl-accent {
         border-left: 3px solid #059669;
@@ -197,17 +184,17 @@ st.markdown(
     [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .dl-accent) [data-testid="stTextInput"]::after {
         content: '.xlsx';
         position: absolute;
-        right: 12px;
+        right: 14px;
         top: 50%;
         transform: translateY(-50%);
-        color: #94a3b8;
+        color: #64748b;
         font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
         font-size: 13px;
         line-height: 1;
         pointer-events: none;
         z-index: 2;
     }
-    /* BaseWeb input 래퍼들의 기본 회색 배경/그림자 제거 — input 자체만 보이게 */
+    /* BaseWeb input 래퍼들의 기본 배경/그림자 전부 transparent — input 자체만 회색 박스로 보이게 */
     [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .dl-accent) [data-testid="stTextInput"] > div,
     [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .dl-accent) [data-testid="stTextInput"] [data-baseweb="input"],
     [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .dl-accent) [data-testid="stTextInput"] [data-baseweb="base-input"] {
@@ -216,19 +203,20 @@ st.markdown(
         box-shadow: none !important;
         border: none !important;
     }
+    /* 파일명 input — Streamlit 파일 업로드 dropzone 톤(연회색 박스)으로. 위 카드와 시각 통일 */
     [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .dl-accent) [data-testid="stTextInput"] input {
-        background: #ffffff !important;
-        background-color: #ffffff !important;
-        border: 1px solid #e2e8f0 !important;
+        background: #f1f5f9 !important;
+        background-color: #f1f5f9 !important;
+        border: 1px solid transparent !important;
         border-radius: 8px !important;
         box-shadow: none !important;
         color: #0f172a !important;
         font-family: ui-monospace, SFMono-Regular, Menlo, monospace !important;
         font-size: 13px !important;
-        padding: 4px 56px 4px 12px !important;
-        height: 32px !important;
+        padding: 4px 56px 4px 14px !important;
+        height: 38px !important;
         max-width: 360px !important;
-        transition: border-color 0.15s ease;
+        transition: background 0.15s ease, border-color 0.15s ease;
         cursor: text;
     }
     /* 카드 안의 가로 행 컬럼 사이 간격 좁히기 (Streamlit 기본 1rem → 0.5rem) */
@@ -236,23 +224,26 @@ st.markdown(
         gap: 0.5rem !important;
     }
     [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .dl-accent) [data-testid="stTextInput"] input:hover {
-        border-color: #cbd5e1 !important;
+        background: #e2e8f0 !important;
+        background-color: #e2e8f0 !important;
         box-shadow: none !important;
     }
-    /* 포커스 시에도 인디고 글로우 없이 보더 색만 바뀜 — 사용자 요청: 깔끔한 흰 배경 + 얇은 테두리만 */
+    /* 포커스 — 흰 배경으로 살짝 밝아지면서 인디고 보더 (글로우 없이) */
     [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .dl-accent) [data-testid="stTextInput"] input:focus {
+        background: #ffffff !important;
+        background-color: #ffffff !important;
         border-color: #6366f1 !important;
         box-shadow: none !important;
         outline: none !important;
     }
 
-    /* 카드 행 미니 라벨 — '파일명' / '복사'. 13px 통일, 입력 필드와 같은 크기. */
+    /* 카드 행 미니 라벨 — '파일명' / '복사'. 13px 통일, input/버튼(38px)과 수직 정렬 */
     .fn-static-label {
         font-size: 13px;
-        color: #94a3b8;
+        color: #64748b;
         font-weight: 500;
         letter-spacing: 0;
-        line-height: 32px;
+        line-height: 38px;
         white-space: nowrap;
         font-family: inherit;
     }
