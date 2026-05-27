@@ -14,23 +14,6 @@ WEEKDAYS = ["월", "화", "수", "목", "금"]  # 검수시트가 만들어지�
 DAY_LABEL = {d: d + "요일" for d in DAYS}
 DAY_PREV = {"월": "일", "화": "월", "수": "화", "목": "수", "금": "목", "토": "금", "일": "토"}
 
-# 2026년 한국 공휴일 (M/D). 휴일 자동 판정용 — 편성표 비고에 "(기존 X에피)"가 있더라도
-# X 요일의 실제 날짜가 이 목록에 있을 때만 휴일로 인식한다.
-KR_HOLIDAYS_2026 = {
-    "1/1",       # 신정
-    "2/16", "2/17", "2/18",  # 설날 연휴
-    "3/1", "3/2",            # 삼일절(일) + 대체공휴일
-    "5/1",       # 근로자의 날
-    "5/5",       # 어린이날
-    "5/24", "5/25",  # 부처님오신날(일) + 대체
-    "6/6",       # 현충일
-    "8/15", "8/17",  # 광복절(토) + 대체
-    "9/24", "9/25", "9/26", "9/28",  # 추석 연휴 + 대체
-    "10/3", "10/5",  # 개천절(토) + 대체
-    "10/9",      # 한글날
-    "12/25",     # 성탄절
-}
-
 # 검수시트 엑셀의 컬럼 헤더 (검수시트 예시 - 시트1.csv 1행 기준).
 # 첫 컬럼은 빈 헤더(요일 라벨/종영 표시 들어가는 자리). 동일 이름 컬럼("담당자")이 중복 등장하지만
 # 위치가 의미를 갖기 때문에 list 그대로 유지하고 인덱스로만 접근한다.
@@ -215,9 +198,21 @@ def _display_day(row: pd.Series, prev_normal_day: str | None = None) -> str:
     yoil = str(row.get("요일", "") or "").strip()
     sigan = str(row.get("시간", "") or "").strip()
     bigo = str(row.get("비고", "") or "").strip()
-    # 연휴지연편성: 편성표 csv 위치상 직전의 일반 요일에 따라가도록
+    # 연휴지연편성: 비고의 '(기존 X 에피)'에서 X를 직접 추출해 그 요일에 배치 (csv 순서 무관, 안정적).
+    # 패턴 없으면 fallback: csv상 직전 일반 요일 (이전 동작 유지)
     if "연휴지연" in bigo:
-        result = prev_normal_day or yoil
+        extracted = _extract_holiday_day(bigo)
+        if extracted:
+            result = extracted
+            print(
+                f"[연휴지연 배치] X={extracted!r} → {extracted}요일에 배치 (bigo={bigo!r})"
+            )
+        else:
+            result = prev_normal_day or yoil
+            print(
+                f"[연휴지연 배치 fallback] 패턴 미매칭 → prev_normal_day={prev_normal_day!r} 사용 "
+                f"(bigo={bigo!r})"
+            )
     # 전날 셋팅: 강제로 전날
     elif "전날 셋팅" in bigo or "전날셋팅" in bigo:
         result = DAY_PREV.get(yoil, yoil)
@@ -238,52 +233,79 @@ def _display_day(row: pd.Series, prev_normal_day: str | None = None) -> str:
     return result
 
 
+def _normalize_bigo(text: str) -> str:
+    """비고 텍스트 정규화 — non-breaking 공백·전각 공백·zero-width·전각 괄호 등 변형을
+    표준 ASCII 공백·괄호로 통일. 정규식 매칭 직전에 호출."""
+    return (
+        text.replace(" ", " ")   # NO-BREAK SPACE
+            .replace("　", " ")   # IDEOGRAPHIC SPACE (전각)
+            .replace("​", "")    # ZERO WIDTH SPACE
+            .replace("‌", "")    # ZERO WIDTH NON-JOINER
+            .replace("‍", "")    # ZERO WIDTH JOINER
+            .replace("﻿", "")    # BOM
+            .replace(" ", " ")   # NARROW NO-BREAK SPACE
+            .replace("（", "(")       # 전각 좌괄호
+            .replace("）", ")")       # 전각 우괄호
+    )
+
+
+# (기존 X 에피) 패턴 — _normalize_bigo로 전처리된 텍스트에 대해 매칭. 양쪽 공백 0~다회 허용.
+_HOLIDAY_DAY_PATTERN = re.compile(r"\(\s*기존\s*([월화수목금토일])\s*에피\s*\)")
+
+
+def _extract_holiday_day(bigo_raw: str) -> str | None:
+    """비고에서 '(기존 X 에피)' 형식의 X(요일) 추출. 다양한 공백·괄호 변형 흡수.
+    매칭되면 한 글자 요일 반환, 아니면 None."""
+    if not bigo_raw:
+        return None
+    normalized = _normalize_bigo(bigo_raw)
+    m = _HOLIDAY_DAY_PATTERN.search(normalized)
+    return m.group(1) if m else None
+
+
 def _compute_holiday_info(df: pd.DataFrame) -> tuple[set[str], dict[str, str]]:
-    """편성표 비고에 '(기존 X에피)' 표기로 휴일 후보 추출 → 그 X 요일의 실제 날짜가
-    `KR_HOLIDAYS_2026`에 있을 때만 휴일로 인정.
-    Returns (휴일 요일 set, 요일 → 'M/D' 매핑)."""
+    """편성표 비고에 '(기존 X 에피)' 표기가 있으면 X 요일을 무조건 휴일로 인정.
+    Returns (휴일 요일 set, 요일 → 'M/D' 매핑 — 헤더 표시용 best-effort)."""
     holiday_days: set[str] = set()
     day_to_date: dict[str, str] = {}
-    pat = re.compile(r"\(\s*기존\s*([월화수목금토일])\s*에피\s*\)")
 
-    candidate_days: set[str] = set()
+    seen_bigos: set[str] = set()
     for _, row in df.iterrows():
-        bigo = str(row.get("비고", "") or "")
-        if "연휴지연" not in bigo:
+        bigo_raw = str(row.get("비고", "") or "")
+        if "연휴지연" not in bigo_raw:
             continue
-        m = pat.search(bigo)
-        if m:
-            candidate_days.add(m.group(1))
-
-    if not candidate_days:
-        return holiday_days, day_to_date
-
-    if "요일" in df.columns and "오픈일" in df.columns:
-        for d in candidate_days:
+        # 진단용: 처음 보는 비고 텍스트마다 repr()로 raw 출력 (보이지 않는 문자 노출)
+        if bigo_raw not in seen_bigos:
+            seen_bigos.add(bigo_raw)
+            normalized = _normalize_bigo(bigo_raw)
+            print(
+                f"[연휴지연 비고] raw={bigo_raw!r} normalized={normalized!r}"
+            )
+        d = _extract_holiday_day(bigo_raw)
+        if d is None:
+            print(
+                f"[휴일 판정 실패] '(기존 X 에피)' 패턴 미매칭 — raw={bigo_raw!r}"
+            )
+            continue
+        if d in holiday_days:
+            continue
+        holiday_days.add(d)
+        # 날짜 추출 (헤더 표시 '(M/D 휴일)' 용 — 휴일 인정 조건 아님, best-effort)
+        if "요일" in df.columns and "오픈일" in df.columns:
             rows = df[df["요일"].astype(str).str.strip() == d]
-            for _, row in rows.iterrows():
-                opendate = str(row.get("오픈일", "") or "").strip()
+            for _, r in rows.iterrows():
+                opendate = str(r.get("오픈일", "") or "").strip()
                 if not opendate:
                     continue
                 nums = re.findall(r"\d+", opendate)
                 if len(nums) >= 3:
-                    md = f"{int(nums[1])}/{int(nums[2])}"
+                    day_to_date[d] = f"{int(nums[1])}/{int(nums[2])}"
                 elif len(nums) == 2:
-                    md = f"{int(nums[0])}/{int(nums[1])}"
-                else:
-                    continue
-                # 실제 한국 공휴일일 때만 휴일로 인정
-                if md in KR_HOLIDAYS_2026:
-                    holiday_days.add(d)
-                    day_to_date[d] = md
-                    print(
-                        f"[휴일 판정] {d}요일 ({md}) → 공휴일 인정"
-                    )
-                else:
-                    print(
-                        f"[휴일 판정] {d}요일 ({md}) → 공휴일 아님, 일반 헤더 처리"
-                    )
-                break
+                    day_to_date[d] = f"{int(nums[0])}/{int(nums[1])}"
+                if d in day_to_date:
+                    break
+        date_disp = day_to_date.get(d, "?")
+        print(f"[휴일 판정] '{d}'요일 ({date_disp}) → 휴일 인정")
     return holiday_days, day_to_date
 
 
