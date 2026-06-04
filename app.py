@@ -843,8 +843,9 @@ if st.session_state.get("preview_active") and st.session_state.get("cached_df") 
         cp_alerts = check_missing_cp_alerts(df)
         if cp_alerts:
             cp_items_html = "".join(
-                f"<li style='margin:6px 0;font-weight:700;color:#7d6608;'>"
-                f"확인 필요 {_esc(a['title'])}, {a['day']}요일 신규작"
+                f"<li style='margin:6px 0'>"
+                f"<span style='color:#7d6608;font-weight:700'>확인 필요</span> "
+                f"<strong>{_esc(a['title'])}, {a['day']}요일 신규작</strong>"
                 f"</li>"
                 for a in cp_alerts
             )
@@ -862,11 +863,11 @@ if st.session_state.get("preview_active") and st.session_state.get("cached_df") 
                     <div style='font-size:16.5px;font-weight:800;color:#7d6608;margin-bottom:8px;'>
                         신규작 권리사 추가 기입 필요
                     </div>
-                    <div style='font-size:13.5px;color:#7d6608;margin-bottom:12px;line-height:1.6;'>
+                    <div style='font-size:13.5px;color:#555;margin-bottom:12px;line-height:1.6;'>
                         어드민 DB 생성 이전으로 CP BILL 칸이 비어져 있습니다.
                         epMaster에서 직접 확인 후 기입 필요합니다.
                     </div>
-                    <ul style='margin:0;padding-left:22px;line-height:1.85;font-size:14.5px;'>
+                    <ul style='margin:0;padding-left:22px;line-height:1.85;font-size:14.5px;color:#222;'>
                         {cp_items_html}
                     </ul>
                 </div>
