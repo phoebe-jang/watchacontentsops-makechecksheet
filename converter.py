@@ -530,14 +530,16 @@ def build_for_day(df: pd.DataFrame, target_day: str) -> dict:
             group_id = f"holi-{idx}" if is_split else None
             for i, (e_val, f_val) in enumerate(pairs):
                 jongyeong_here = is_jongyeong and i == len(pairs) - 1
-                vals = _row_values_for(row, e_val, f_val, False)
-                vals[COL_A] = ""  # 콘텐츠 행 A열은 비워둠 (헤더 행에만 비고 텍스트)
+                vals = _row_values_for(row, e_val, f_val, jongyeong_here)
+                # 종영이 아닌 행만 A열 비움. 종영 행은 _row_values_for가 "종영" 설정
+                if not jongyeong_here:
+                    vals[COL_A] = ""
                 holiday_groups[bigo].append(
                     {
                         "values": vals,
                         "category": "holiday_body",
                         "time": str(row.get("시간", "") or ""),
-                        "jongyeong": False,
+                        "jongyeong": jongyeong_here,
                         "group_id": group_id,
                         "split_idx": i,
                         "split_total": len(pairs),
@@ -610,8 +612,11 @@ def build_for_day(df: pd.DataFrame, target_day: str) -> dict:
 
     # 휴일 요일이면 일반 콘텐츠만 음영 X (요일 헤더만 형광 초록).
     # 단, 결방(cancelled)은 어느 요일이든 빨간 음영 유지, 연휴지연(holiday_block)도 자체 회색 유지.
+    # 예약작(reserved)은 휴일이어도 핑크 음영 유지 — 별도로 예약해서 추가한 행이라 시각 구분 필요.
     if is_target_holiday:
         for entry in body:
+            if entry["category"] == "reserved":
+                continue
             entry["no_fill"] = True
     # 결방 행 음영 적용 검증용 디버그 로그
     for entry in cancelled:
@@ -840,7 +845,7 @@ def build_xlsx(df: pd.DataFrame, days: list[str] | str, excluded_indices: set[in
                 for col_idx in range(1, len(entry["values"]) + 1):
                     ws.cell(row=row_idx, column=col_idx).fill = fill
         # xlsx에서는 종영 셀에 노란 음영을 입히지 않음 (사용자 룰: 미리보기에만 음영, 다운로드 X)
-        if entry.get("jongyeong") and entry["category"] not in ("holiday_header", "holiday_body"):
+        if entry.get("jongyeong") and entry["category"] != "holiday_header":
             ws.cell(row=row_idx, column=1).font = _FONT_BOLD
         if entry["category"] in ("header", "header_holiday", "holiday_header"):
             # holiday_header(연휴지연)만 빨간 굵게로 강조. 요일 헤더(header, header_holiday)는 일반 굵기.
