@@ -857,7 +857,7 @@ if st.session_state.get("preview_active") and st.session_state.get("cached_df") 
                 )
                 group_blocks.append(
                     f"<div style='margin-top:{margin_top}'>"
-                    f"<div style='color:#7d6608;font-weight:700;margin-bottom:4px'>[{day}요일 신규작]</div>"
+                    f"<div style='color:#7d6608;font-weight:700;margin-bottom:4px'>{day}요일 신규작</div>"
                     f"<ul style='margin:0;padding-left:22px;line-height:1.85;color:#222'>{items_li}</ul>"
                     f"</div>"
                 )
