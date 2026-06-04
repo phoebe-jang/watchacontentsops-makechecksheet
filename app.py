@@ -842,13 +842,26 @@ if st.session_state.get("preview_active") and st.session_state.get("cached_df") 
         # 신규작 권리사 추가 기입 필요 — 신규 행 중 CP bill 빈칸인 행
         cp_alerts = check_missing_cp_alerts(df)
         if cp_alerts:
-            cp_items_html = "".join(
-                f"<li style='margin:6px 0'>"
-                f"<span style='color:#7d6608;font-weight:700'>확인 필요</span> "
-                f"<strong>{_esc(a['title'])}, {a['day']}요일 신규작</strong>"
-                f"</li>"
-                for a in cp_alerts
-            )
+            # 요일별 그룹핑 (월→금 순서 유지)
+            cp_groups: dict[str, list[dict]] = {}
+            for a in cp_alerts:
+                cp_groups.setdefault(a["day"], []).append(a)
+            group_blocks = []
+            for day in WEEKDAYS:
+                items = cp_groups.get(day, [])
+                if not items:
+                    continue
+                margin_top = "8px" if group_blocks else "0"
+                items_li = "".join(
+                    f"<li style='margin:4px 0'>{_esc(a['title'])}</li>" for a in items
+                )
+                group_blocks.append(
+                    f"<div style='margin-top:{margin_top}'>"
+                    f"<div style='color:#7d6608;font-weight:700;margin-bottom:4px'>[{day}요일 신규작]</div>"
+                    f"<ul style='margin:0;padding-left:22px;line-height:1.85;color:#222'>{items_li}</ul>"
+                    f"</div>"
+                )
+            cp_groups_html = "".join(group_blocks)
             st.markdown(
                 f"""
                 <div style='
@@ -867,9 +880,9 @@ if st.session_state.get("preview_active") and st.session_state.get("cached_df") 
                         어드민 DB 생성 이전으로 CP BILL 칸이 비어져 있습니다.
                         epMaster에서 직접 확인 후 기입 필요합니다.
                     </div>
-                    <ul style='margin:0;padding-left:22px;line-height:1.85;font-size:14.5px;color:#222;'>
-                        {cp_items_html}
-                    </ul>
+                    <div style='font-size:14.5px;'>
+                        {cp_groups_html}
+                    </div>
                 </div>
                 """,
                 unsafe_allow_html=True,
