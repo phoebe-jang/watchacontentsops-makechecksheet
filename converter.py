@@ -359,6 +359,33 @@ def check_jongyeong_alerts(df: pd.DataFrame) -> list[dict]:
     return alerts
 
 
+def check_missing_cp_alerts(df: pd.DataFrame) -> list[dict]:
+    """신규작인데 CP bill 컬럼이 비어 있는 행 → 어드민 DB 생성 전이라 수식 매핑이 안 됨.
+    사용자가 epMaster에서 직접 확인 후 기입해야 함을 알림.
+    """
+    alerts: list[dict] = []
+    if "CP bill" not in df.columns:
+        return alerts
+    prev_normal_days = _compute_prev_normal_days(df)
+    for idx, row in df.iterrows():
+        bigo_p = str(row.get("편성비고", "") or "")
+        if "신규" not in bigo_p:
+            continue
+        cp = str(row.get("CP bill", "") or "").strip()
+        if cp:
+            continue
+        if _is_irregular(row):
+            continue
+        title_raw = str(row.get("Title", "") or "").strip()
+        title_clean, _mt = _strip_mapping_suffix(title_raw)
+        prev = prev_normal_days[idx] if idx < len(prev_normal_days) else None
+        display_d = _display_day(row, prev_normal_day=prev)
+        if display_d not in WEEKDAYS:
+            continue
+        alerts.append({"title": title_clean, "day": display_d})
+    return alerts
+
+
 _CP_SUFFIX_RE = re.compile(r"-[A-Z0-9]+$")  # 권리사 꼬리 코드 (예: -RS50, -RS65, -FLAT)
 
 

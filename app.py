@@ -39,6 +39,7 @@ from converter import (
     build_ordered_entries,
     select_day_range,
     check_jongyeong_alerts,
+    check_missing_cp_alerts,
 )
 
 st.set_page_config(page_title="검수시트 자동 생성기", page_icon="🎬", layout="wide")
@@ -832,6 +833,41 @@ if st.session_state.get("preview_active") and st.session_state.get("cached_df") 
                     </div>
                     <ul style='margin:0;padding-left:22px;line-height:1.85;font-size:14.5px;color:#222;'>
                         {items_html}
+                    </ul>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        # 신규작 권리사 추가 기입 필요 — 신규 행 중 CP bill 빈칸인 행
+        cp_alerts = check_missing_cp_alerts(df)
+        if cp_alerts:
+            cp_items_html = "".join(
+                f"<li style='margin:6px 0;font-weight:700;color:#7d6608;'>"
+                f"확인 필요 {_esc(a['title'])}, {a['day']}요일 신규작"
+                f"</li>"
+                for a in cp_alerts
+            )
+            st.markdown(
+                f"""
+                <div style='
+                    background:#fef9e7;
+                    border:1px solid #f1c40f;
+                    border-left:6px solid #f1c40f;
+                    border-radius:12px;
+                    padding:18px 22px;
+                    margin:14px 0;
+                    box-shadow:0 4px 14px rgba(241,196,15,0.10);
+                '>
+                    <div style='font-size:16.5px;font-weight:800;color:#7d6608;margin-bottom:8px;'>
+                        신규작 권리사 추가 기입 필요
+                    </div>
+                    <div style='font-size:13.5px;color:#7d6608;margin-bottom:12px;line-height:1.6;'>
+                        어드민 DB 생성 이전으로 CP BILL 칸이 비어져 있습니다.
+                        epMaster에서 직접 확인 후 기입 필요합니다.
+                    </div>
+                    <ul style='margin:0;padding-left:22px;line-height:1.85;font-size:14.5px;'>
+                        {cp_items_html}
                     </ul>
                 </div>
                 """,
